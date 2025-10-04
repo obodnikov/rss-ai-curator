@@ -47,11 +47,30 @@ class TelegramBot:
         
         logger.info(f"Telegram bot initialized for admin user {self.admin_user_id}")
     
+    async def setup_bot_commands(self):
+        """Set up bot command menu in Telegram."""
+        from telegram import BotCommand
+        
+        commands = [
+            BotCommand("start", "Initialize bot"),
+            BotCommand("help", "Show all commands"),
+            BotCommand("stats", "Show your preference statistics"),
+            BotCommand("fetch", "Fetch RSS feeds now"),
+            BotCommand("digest", "Generate and send digest now"),
+            BotCommand("cleanup", "Run cleanup now"),
+        ]
+        
+        await self.app.bot.set_my_commands(commands)
+        logger.info("Bot commands menu configured")
+    
     def _register_handlers(self):
         """Register command and callback handlers."""
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
         self.app.add_handler(CommandHandler("stats", self.stats_command))
+        self.app.add_handler(CommandHandler("fetch", self.fetch_command))
+        self.app.add_handler(CommandHandler("digest", self.digest_command))
+        self.app.add_handler(CommandHandler("cleanup", self.cleanup_command))
         self.app.add_handler(CallbackQueryHandler(self.button_callback))
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -84,7 +103,10 @@ class TelegramBot:
             "📚 Available Commands:\n\n"
             "/start - Start the bot\n"
             "/help - Show this help message\n"
-            "/stats - Show your preference statistics\n\n"
+            "/stats - Show your preference statistics\n"
+            "/fetch - Fetch RSS feeds now\n"
+            "/digest - Generate and send digest now\n"
+            "/cleanup - Run cleanup now\n\n"
             "The bot automatically fetches and sends articles every few hours. "
             "Just rate them with the buttons!"
         )
@@ -113,6 +135,148 @@ class TelegramBot:
             
             await update.message.reply_text(stats_msg)
         
+        finally:
+            db.close()
+    
+    async def fetch_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /fetch command - manually trigger RSS fetch."""
+        user_id = update.effective_user.id
+        
+        if user_id != self.admin_user_id:
+            return
+        
+        await update.message.reply_text("🔄 Fetching RSS feeds...")
+        
+        # Import here to avoid circular dependency
+        from .fetcher import RSSFetcher
+        
+        db = self.db_manager.get_session()
+        try:
+            fetcher = RSSFetcher(self.config)
+            new_count = fetcher.fetch_all(db)
+            
+            await update.message.reply_text(
+                f"✅ Fetch complete!\n\n"
+                f"📰 Found {new_count} new articles"
+            )
+            logger.info(f"Manual fetch triggered by user {user_id}: {new_count} new articles")
+        
+        except Exception as e:
+            logger.error(f"Error in manual fetch: {e}")
+            await update.message.reply_text(
+                f"❌ Error fetching feeds:\n{str(e)}"
+            )
+        finally:
+            db.close()
+    
+    async def digest_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /digest command - manually generate and send digest."""
+        user_id = update.effective_user.id
+        
+        if user_id != self.admin_user_id:
+            return
+        
+        await update.message.reply_text("🔄 Generating digest...")
+        
+        # Import here to avoid circular dependency
+        from .ranker import ArticleRanker
+        from .embedder import Embedder
+        from .database import Article, Feedback
+        
+        db = self.db_manager.get_session()
+        try:
+            # Initialize components
+            embedder = Embedder(self.config)
+            ranker = ArticleRanker(self.config, embedder)
+            
+            # Get pending articles
+            pending = db.query(Article).outerjoin(Feedback).filter(
+                Feedback.id == None
+            ).all()
+            
+            if not pending:
+                await update.message.reply_text("ℹ️ No pending articles to rank")
+                return
+            
+            # Get user feedback history
+            liked = db.query(Article).join(Feedback).filter(
+                Feedback.rating == 'like'
+            ).all()
+            
+            disliked = db.query(Article).join(Feedback).filter(
+                Feedback.rating == 'dislike'
+            ).all()
+            
+            # Filter and rank
+            ranked = ranker.filter_and_rank_candidates(
+                db, pending, liked, disliked
+            )
+            
+            # Apply score threshold
+            min_score = self.config['filtering'].get('min_score_to_show', 7.0)
+            filtered = [
+                (a, s, r) for a, s, r in ranked
+                if s >= min_score
+            ]
+            
+            # Limit to articles per digest
+            max_articles = self.config['filtering']['articles_per_digest']
+            digest_articles = filtered[:max_articles]
+            
+            if digest_articles:
+                await self.send_digest(digest_articles)
+                await update.message.reply_text(
+                    f"✅ Digest sent!\n\n"
+                    f"📬 Sent {len(digest_articles)} articles"
+                )
+                logger.info(f"Manual digest triggered by user {user_id}: {len(digest_articles)} articles")
+            else:
+                await update.message.reply_text(
+                    f"ℹ️ No articles met the score threshold (min: {min_score}/10)\n\n"
+                    f"Tip: Like some articles first to train the system!"
+                )
+        
+        except Exception as e:
+            logger.error(f"Error in manual digest: {e}")
+            await update.message.reply_text(
+                f"❌ Error generating digest:\n{str(e)}"
+            )
+        finally:
+            db.close()
+    
+    async def cleanup_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /cleanup command - manually run cleanup."""
+        user_id = update.effective_user.id
+        
+        if user_id != self.admin_user_id:
+            return
+        
+        await update.message.reply_text("🗑️ Running cleanup...")
+        
+        # Import here to avoid circular dependency
+        from .cleanup import ArticleCleanupManager
+        from .embedder import Embedder
+        
+        db = self.db_manager.get_session()
+        try:
+            embedder = Embedder(self.config)
+            cleanup_manager = ArticleCleanupManager(self.config, embedder)
+            
+            stats = cleanup_manager.run_cleanup(db)
+            
+            await update.message.reply_text(
+                f"✅ Cleanup complete!\n\n"
+                f"🗑️ Deleted: {stats['deleted']} articles\n"
+                f"👍 Kept liked: {stats['liked_kept']}\n"
+                f"👎 Kept disliked: {stats['disliked_kept']}"
+            )
+            logger.info(f"Manual cleanup triggered by user {user_id}: {stats['deleted']} deleted")
+        
+        except Exception as e:
+            logger.error(f"Error in manual cleanup: {e}")
+            await update.message.reply_text(
+                f"❌ Error running cleanup:\n{str(e)}"
+            )
         finally:
             db.close()
     
@@ -324,6 +488,7 @@ class TelegramBot:
         """Start the bot."""
         await self.app.initialize()
         await self.app.start()
+        await self.setup_bot_commands()  # Set up command menu
         logger.info("Telegram bot started")
     
     async def stop(self):
