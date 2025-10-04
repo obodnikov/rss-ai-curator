@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Data directories
+data/
+!data/.gitkeep
+logs/
+!logs/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ChromaDB
+chromadb/
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+
+# Config (keep example)
+# Uncomment if you want to ignore config.yaml
+# config/config.yaml
