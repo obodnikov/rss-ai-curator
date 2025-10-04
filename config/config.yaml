@@ -3,7 +3,7 @@
 # LLM Configuration
 llm:
   provider: "chatgpt"  # Options: "chatgpt" or "claude"
-  response_language: "English"  # Any language
+  response_language: "Russian"  # Any language!
   response_length: "concise"    # concise/medium/detailed
   
   chatgpt:

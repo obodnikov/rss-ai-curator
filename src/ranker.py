@@ -101,6 +101,17 @@ class ArticleRanker:
         Returns:
             Formatted prompt string
         """
+        # Get language settings
+        language = self.config['llm'].get('response_language', 'English')
+        length = self.config['llm'].get('response_length', 'concise')
+        
+        # Length instructions
+        length_instruction = {
+            'concise': '1 concise sentence (max 15 words)',
+            'medium': '2 sentences (max 30 words total)',
+            'detailed': '3-4 sentences with detailed reasoning'
+        }.get(length, '1 concise sentence (max 15 words)')
+        
         prompt = "You are a personalized news curator. "
         prompt += "Your task is to rate how relevant a new article is to the user "
         prompt += "based on their past preferences.\n\n"
@@ -130,13 +141,14 @@ class ArticleRanker:
         content_preview = article.content[:1000] if article.content else article.summary
         prompt += f"Content: {content_preview}\n\n"
         
-        # Add instructions
+        # Add instructions with language specification
         prompt += "TASK:\n"
         prompt += "1. Rate this article from 0-10 based on the user's preferences\n"
-        prompt += "2. Provide 1-2 sentences explaining why the user might (or might not) like this\n\n"
+        prompt += f"2. Provide {length_instruction} explaining why the user might (or might not) like this\n"
+        prompt += f"3. Write your explanation ONLY in {language}\n\n"
         prompt += "Format your response as:\n"
         prompt += "SCORE: [number]\n"
-        prompt += "REASONING: [explanation]"
+        prompt += f"REASONING: [explanation in {language}]"
         
         return prompt
     
