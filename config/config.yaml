@@ -1,0 +1,124 @@
+# RSS AI Curator Configuration
+
+# LLM Configuration
+llm:
+  provider: "chatgpt"  # Options: "chatgpt" or "claude"
+  
+  chatgpt:
+    model: "gpt-4.1-mini"  # Options: gpt-4.1, gpt-4.1-mini, gpt-5, gpt-5-mini
+    api_key_env: "OPENAI_API_KEY"
+    temperature: 0.7
+    max_tokens: 500
+    
+  claude:
+    model: "claude-sonnet-4-5-20250929"
+    api_key_env: "ANTHROPIC_API_KEY"
+    temperature: 0.7
+    max_tokens: 500
+
+# Embedding Configuration
+embeddings:
+  provider: "openai"
+  model: "text-embedding-3-small"
+  api_key_env: "OPENAI_API_KEY"
+
+# LLM Context Management
+llm_context:
+  max_liked_examples: 10        # Max liked articles to show LLM
+  max_disliked_examples: 5      # Max disliked articles to show LLM
+  
+  selection_strategy: "hybrid"   # Options: recent, similar, diverse, hybrid
+  
+  strategies:
+    recent:
+      enabled: true
+      weight: 0.3
+    similar:
+      enabled: true
+      weight: 0.5
+    diverse:
+      enabled: true
+      weight: 0.2
+      clusters: 3
+
+# Article Cleanup Configuration
+cleanup:
+  enabled: true
+  schedule: "daily"
+  
+  retention:
+    # Time-based retention (days)
+    liked_articles_days: 365
+    disliked_articles_days: 90
+    neutral_articles_days: 30
+    
+    # Count-based limits
+    max_liked_articles: 1000
+    max_disliked_articles: 500
+    
+    # Cleanup strategy when hitting limits
+    cleanup_strategy: "oldest_first"  # Options: oldest_first, lowest_rated
+
+# RSS Feed Sources
+rss_feeds:
+  - url: "https://techcrunch.com/feed/"
+    name: "TechCrunch"
+  - url: "https://www.theverge.com/rss/index.xml"
+    name: "The Verge"
+  - url: "https://arstechnica.com/feed/"
+    name: "Ars Technica"
+  - url: "https://www.wired.com/feed/rss"
+    name: "Wired"
+  - url: "https://www.technologyreview.com/feed/"
+    name: "MIT Tech Review"
+  - url: "https://www.engadget.com/rss.xml"
+    name: "Engadget"
+  - url: "https://www.cnet.com/rss/news/"
+    name: "CNET"
+  - url: "https://www.zdnet.com/news/rss.xml"
+    name: "ZDNet"
+  - url: "https://news.ycombinator.com/rss"
+    name: "Hacker News"
+  - url: "https://www.reddit.com/r/technology/.rss"
+    name: "r/technology"
+
+# Telegram Configuration
+telegram:
+  bot_token_env: "TELEGRAM_BOT_TOKEN"
+  admin_user_id_env: "TELEGRAM_ADMIN_USER_ID"
+  
+  # Message formatting
+  show_reasoning: true
+  show_score: true
+  show_source: true
+  show_date: true
+
+# Filtering Configuration
+filtering:
+  similarity_threshold: 0.7      # Min similarity score to consider
+  top_candidates_for_llm: 20     # How many to send to LLM after filtering
+  articles_per_digest: 8         # How many to show in each digest
+  min_score_to_show: 7.0         # Min LLM score to include in digest
+
+# Scheduling Configuration
+scheduling:
+  fetch_interval_hours: 1        # Fetch RSS feeds every N hours
+  digest_interval_hours: 3       # Send digest every N hours
+  cleanup_time: "03:00"          # Daily cleanup time (HH:MM)
+
+# Database Configuration
+database:
+  path: "data/rss_curator.db"
+  echo: false  # Set to true for SQL debug logging
+
+# ChromaDB Configuration
+chromadb:
+  path: "data/chromadb"
+  collection_name: "articles"
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/rss_curator.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
