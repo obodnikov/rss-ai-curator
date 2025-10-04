@@ -3,6 +3,8 @@
 # LLM Configuration
 llm:
   provider: "chatgpt"  # Options: "chatgpt" or "claude"
+  response_language: "English"  # Any language
+  response_length: "concise"    # concise/medium/detailed
   
   chatgpt:
     model: "gpt-4.1-mini"  # Options: gpt-4.1, gpt-4.1-mini, gpt-5, gpt-5-mini
