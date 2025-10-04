@@ -8,6 +8,9 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+# Disable ChromaDB telemetry BEFORE any chromadb imports
+os.environ['ANONYMIZED_TELEMETRY'] = 'False'
+
 from src.database import DatabaseManager
 from src.fetcher import RSSFetcher
 from src.embedder import Embedder
@@ -62,6 +65,12 @@ def setup_logging(config: dict):
     logging.getLogger('httpcore').setLevel(logging.WARNING)
     logging.getLogger('telegram').setLevel(logging.WARNING)
     logging.getLogger('apscheduler').setLevel(logging.INFO)
+    
+    # Completely suppress ChromaDB telemetry
+    logging.getLogger('chromadb').setLevel(logging.WARNING)
+    logging.getLogger('chromadb.telemetry').setLevel(logging.CRITICAL)
+    logging.getLogger('chromadb.telemetry.product').setLevel(logging.CRITICAL)
+    logging.getLogger('chromadb.telemetry.product.posthog').setLevel(logging.CRITICAL)
 
 
 def load_config() -> dict:

@@ -4,6 +4,10 @@ import logging
 from typing import List, Dict, Optional, Tuple
 import numpy as np
 from openai import OpenAI
+
+# Disable ChromaDB telemetry before import
+os.environ['ANONYMIZED_TELEMETRY'] = 'False'
+
 import chromadb
 from chromadb.config import Settings
 from .database import Article
@@ -31,9 +35,15 @@ class Embedder:
         chroma_path = config.get('chromadb', {}).get('path', 'data/chromadb')
         os.makedirs(chroma_path, exist_ok=True)
         
+        # Ensure telemetry is disabled
+        os.environ['ANONYMIZED_TELEMETRY'] = 'False'
+        
         self.chroma_client = chromadb.PersistentClient(
             path=chroma_path,
-            settings=Settings(anonymized_telemetry=False)
+            settings=Settings(
+                anonymized_telemetry=False,
+                allow_reset=True
+            )
         )
         
         collection_name = config.get('chromadb', {}).get('collection_name', 'articles')
