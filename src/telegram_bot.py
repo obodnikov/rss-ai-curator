@@ -75,10 +75,13 @@ class TelegramBot:
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command."""
+        if not update.effective_message:
+            return
+            
         user_id = update.effective_user.id
         
         if user_id != self.admin_user_id:
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 "Sorry, this bot is private and only available to authorized users."
             )
             return
@@ -95,10 +98,13 @@ class TelegramBot:
             "Use /help to see all commands."
         )
         
-        await update.message.reply_text(welcome_msg)
+        await update.effective_message.reply_text(welcome_msg)
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
+        if not update.effective_message:
+            return
+            
         help_msg = (
             "📚 Available Commands:\n\n"
             "/start - Start the bot\n"
@@ -111,10 +117,13 @@ class TelegramBot:
             "Just rate them with the buttons!"
         )
         
-        await update.message.reply_text(help_msg)
+        await update.effective_message.reply_text(help_msg)
     
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /stats command."""
+        if not update.effective_message:
+            return
+            
         user_id = update.effective_user.id
         
         if user_id != self.admin_user_id:
@@ -133,19 +142,22 @@ class TelegramBot:
                 f"💾 Database size: {stats['db_size_mb']:.1f} MB"
             )
             
-            await update.message.reply_text(stats_msg)
+            await update.effective_message.reply_text(stats_msg)
         
         finally:
             db.close()
     
     async def fetch_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /fetch command - manually trigger RSS fetch."""
+        if not update.effective_message:
+            return
+            
         user_id = update.effective_user.id
         
         if user_id != self.admin_user_id:
             return
         
-        await update.message.reply_text("🔄 Fetching RSS feeds...")
+        await update.effective_message.reply_text("🔄 Fetching RSS feeds...")
         
         # Import here to avoid circular dependency
         from .fetcher import RSSFetcher
@@ -155,7 +167,7 @@ class TelegramBot:
             fetcher = RSSFetcher(self.config)
             new_count = fetcher.fetch_all(db)
             
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 f"✅ Fetch complete!\n\n"
                 f"📰 Found {new_count} new articles"
             )
@@ -163,7 +175,7 @@ class TelegramBot:
         
         except Exception as e:
             logger.error(f"Error in manual fetch: {e}")
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 f"❌ Error fetching feeds:\n{str(e)}"
             )
         finally:
@@ -171,12 +183,15 @@ class TelegramBot:
     
     async def digest_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /digest command - manually generate and send digest."""
+        if not update.effective_message:
+            return
+            
         user_id = update.effective_user.id
         
         if user_id != self.admin_user_id:
             return
         
-        await update.message.reply_text("🔄 Generating digest...")
+        await update.effective_message.reply_text("🔄 Generating digest...")
         
         # Import here to avoid circular dependency
         from .ranker import ArticleRanker
@@ -195,7 +210,7 @@ class TelegramBot:
             ).all()
             
             if not pending:
-                await update.message.reply_text("ℹ️ No pending articles to rank")
+                await update.effective_message.reply_text("ℹ️ No pending articles to rank")
                 return
             
             # Get user feedback history
@@ -225,20 +240,20 @@ class TelegramBot:
             
             if digest_articles:
                 await self.send_digest(digest_articles)
-                await update.message.reply_text(
+                await update.effective_message.reply_text(
                     f"✅ Digest sent!\n\n"
                     f"📬 Sent {len(digest_articles)} articles"
                 )
                 logger.info(f"Manual digest triggered by user {user_id}: {len(digest_articles)} articles")
             else:
-                await update.message.reply_text(
+                await update.effective_message.reply_text(
                     f"ℹ️ No articles met the score threshold (min: {min_score}/10)\n\n"
                     f"Tip: Like some articles first to train the system!"
                 )
         
         except Exception as e:
             logger.error(f"Error in manual digest: {e}")
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 f"❌ Error generating digest:\n{str(e)}"
             )
         finally:
@@ -246,12 +261,15 @@ class TelegramBot:
     
     async def cleanup_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /cleanup command - manually run cleanup."""
+        if not update.effective_message:
+            return
+            
         user_id = update.effective_user.id
         
         if user_id != self.admin_user_id:
             return
         
-        await update.message.reply_text("🗑️ Running cleanup...")
+        await update.effective_message.reply_text("🗑️ Running cleanup...")
         
         # Import here to avoid circular dependency
         from .cleanup import ArticleCleanupManager
@@ -264,7 +282,7 @@ class TelegramBot:
             
             stats = cleanup_manager.run_cleanup(db)
             
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 f"✅ Cleanup complete!\n\n"
                 f"🗑️ Deleted: {stats['deleted']} articles\n"
                 f"👍 Kept liked: {stats['liked_kept']}\n"
@@ -274,7 +292,7 @@ class TelegramBot:
         
         except Exception as e:
             logger.error(f"Error in manual cleanup: {e}")
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 f"❌ Error running cleanup:\n{str(e)}"
             )
         finally:
@@ -328,11 +346,34 @@ class TelegramBot:
             
             db.commit()
             
-            # Update message with feedback indicator
+            # Keep original message text and add feedback indicator
             emoji = "👍" if action == "like" else "👎"
-            updated_text = query.message.text + f"\n\n{emoji} Your feedback has been {feedback_msg}!"
+            original_text = query.message.text
             
-            await query.edit_message_text(updated_text)
+            # Remove old feedback line if exists
+            lines = original_text.split('\n')
+            filtered_lines = [line for line in lines if not line.startswith(('👍', '👎'))]
+            updated_text = '\n'.join(filtered_lines)
+            
+            # Add new feedback line
+            updated_text += f"\n\n{emoji} Your feedback has been {feedback_msg}!"
+            
+            # Update message without removing buttons
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            keyboard = [
+                [
+                    InlineKeyboardButton("👍 Like", callback_data=f"like_{article.id}"),
+                    InlineKeyboardButton("👎 Dislike", callback_data=f"dislike_{article.id}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                text=updated_text,
+                reply_markup=reply_markup,
+                parse_mode='HTML',
+                disable_web_page_preview=False
+            )
             
             logger.info(
                 f"User {user_id} rated article {article_id} as {action}"
