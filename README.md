@@ -1,93 +1,377 @@
-# RSS AI Curator
+# RSS AI Curator 🤖📰
 
+AI-powered RSS feed aggregator that learns your preferences and sends personalized article recommendations via Telegram.
 
+## Features
 
-## Getting started
+- 🔍 **Smart Filtering**: Hybrid approach using embeddings + LLM ranking
+- 🧠 **Preference Learning**: Like/dislike feedback trains the system
+- 🤖 **Multi-LLM Support**: Claude Sonnet 4.5 or ChatGPT (4.1, 4.1-mini, 5, 5-mini)
+- 📱 **Telegram Bot**: Private chat with interactive buttons
+- 🗑️ **Auto Cleanup**: Intelligent article retention policies
+- 💾 **SQLite Storage**: Zero-config database
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## Architecture
 
 ```
-cd existing_repo
-git remote add origin http://gitlab.obodnikov.com/mike/rss-ai-curator.git
-git branch -M main
-git push -uf origin main
+RSS Feeds → Embeddings → Similarity Filter → LLM Ranker → Telegram Bot
+              ↓                                    ↓
+         ChromaDB                            Your Feedback
+                                                  ↓
+                                         Continuous Learning
 ```
 
-## Integrate with your tools
+## Quick Start
 
-- [ ] [Set up project integrations](http://gitlab.obodnikov.com/mike/rss-ai-curator/-/settings/integrations)
+### 1. Prerequisites
 
-## Collaborate with your team
+- Python 3.9+
+- Telegram account
+- OpenAI API key (for embeddings + optional ChatGPT)
+- Anthropic API key (optional, for Claude)
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+### 2. Installation
 
-## Test and Deploy
+```bash
+# Clone or create project directory
+mkdir rss-ai-curator && cd rss-ai-curator
 
-Use the built-in continuous integration in GitLab.
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+# Install dependencies
+pip install -r requirements.txt
+```
 
-***
+### 3. Configuration
 
-# Editing this README
+#### Create Telegram Bot
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+1. Message [@BotFather](https://t.me/botfather) on Telegram
+2. Send `/newbot` and follow instructions
+3. Copy the bot token
 
-## Suggestions for a good README
+#### Get Your Telegram User ID
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+1. Message [@userinfobot](https://t.me/userinfobot)
+2. Copy your numeric user ID
 
-## Name
-Choose a self-explaining name for your project.
+#### Set Up API Keys
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+Create `.env` file:
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+```bash
+cp .env.example .env
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Edit `.env`:
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+```env
+# Required
+OPENAI_API_KEY=sk-proj-...
+TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+TELEGRAM_ADMIN_USER_ID=123456789
+
+# Optional (if using Claude)
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+#### Configure RSS Feeds
+
+Edit `config/config.yaml`:
+
+```yaml
+rss_feeds:
+  - url: "https://techcrunch.com/feed/"
+    name: "TechCrunch"
+  - url: "https://www.theverge.com/rss/index.xml"
+    name: "The Verge"
+  # Add your 10-15 feeds here
+```
+
+### 4. Initialize Database
+
+```bash
+# First run creates database and tables
+python main.py init
+```
+
+### 5. Start the Bot
+
+```bash
+python main.py start
+```
+
+You should see:
+```
+INFO: Database initialized
+INFO: Scheduler started with all jobs
+INFO: Telegram bot started
+INFO: RSS AI Curator is running...
+```
+
+### 6. Test in Telegram
+
+1. Open Telegram and search for your bot
+2. Send `/start` to begin
+3. Wait for first digest (3 hours) or send `/fetch` to fetch immediately
+4. Click 👍 Like or 👎 Dislike on articles
+5. System learns your preferences!
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### Telegram Commands
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+- `/start` - Initialize bot
+- `/fetch` - Fetch RSS feeds now
+- `/digest` - Generate digest now
+- `/stats` - Show your preference stats
+- `/cleanup` - Run cleanup now
+- `/help` - Show all commands
+
+### Configuration Options
+
+See `config/config.yaml` for:
+
+- **LLM Settings**: Switch between Claude/ChatGPT, select model
+- **Context Limits**: How many examples to show LLM (default: 10 liked, 5 disliked)
+- **Cleanup Policy**: Article retention (liked: 365d, disliked: 90d, neutral: 30d)
+- **Scheduling**: Fetch interval (1h), digest interval (3h)
+- **Filtering**: Similarity threshold, articles per digest
+
+### Switching LLM Providers
+
+Edit `config/config.yaml`:
+
+```yaml
+llm:
+  provider: "chatgpt"  # or "claude"
+  
+  chatgpt:
+    model: "gpt-4.1-mini"  # Options: gpt-4.1, gpt-4.1-mini, gpt-5, gpt-5-mini
+  
+  claude:
+    model: "claude-sonnet-4-5-20250929"
+```
+
+Restart the bot to apply changes.
+
+## Project Structure
+
+```
+rss-ai-curator/
+├── config/
+│   ├── config.yaml          # Main configuration
+│   └── .env                 # API keys (git-ignored)
+├── src/
+│   ├── __init__.py
+│   ├── database.py          # SQLAlchemy models
+│   ├── fetcher.py           # RSS aggregation
+│   ├── embedder.py          # OpenAI embeddings
+│   ├── context_selector.py # Smart example selection
+│   ├── cleanup.py           # Article retention
+│   ├── ranker.py            # LLM ranking logic
+│   ├── telegram_bot.py      # Bot handlers
+│   └── scheduler.py         # Cron jobs
+├── data/                    # Created at runtime
+│   ├── rss_curator.db       # SQLite database
+│   └── chromadb/            # Vector embeddings
+├── logs/                    # Application logs
+├── main.py                  # Entry point
+├── requirements.txt
+└── README.md
+```
+
+## Monitoring
+
+### Check Logs
+
+```bash
+tail -f logs/rss_curator.log
+```
+
+### View Statistics
+
+```bash
+# In Telegram, send:
+/stats
+```
+
+Output:
+```
+📊 Your Preference Stats
+
+👍 Liked: 42 articles
+👎 Disliked: 18 articles
+📰 Total articles: 1,247
+🗑️ Cleaned up: 856 articles
+💾 Database size: 15.3 MB
+```
+
+### Database Inspection
+
+```bash
+sqlite3 data/rss_curator.db
+
+.tables
+SELECT COUNT(*) FROM articles;
+SELECT * FROM feedback LIMIT 10;
+```
+
+## Troubleshooting
+
+### Bot not responding
+
+1. Check bot is running: `ps aux | grep main.py`
+2. Check logs: `tail -f logs/rss_curator.log`
+3. Verify token: `echo $TELEGRAM_BOT_TOKEN`
+
+### No articles in digest
+
+1. Check RSS feeds are accessible: test URLs in browser
+2. Check similarity threshold isn't too high (config.yaml)
+3. Run immediate fetch: `/fetch` in Telegram
+4. Check you have some liked articles for comparison
+
+### High API costs
+
+1. Reduce `top_candidates_for_llm` in config (default: 20)
+2. Switch to cheaper model: `gpt-4.1-mini` instead of `gpt-4.1`
+3. Increase digest interval: 6h instead of 3h
+4. Reduce `max_liked_examples` from 10 to 5
+
+### Database too large
+
+1. Reduce retention days in config
+2. Run cleanup manually: `/cleanup` in Telegram
+3. Lower max article limits (liked: 1000 → 500)
+
+## Advanced Usage
+
+### Run as systemd service (Linux)
+
+Create `/etc/systemd/system/rss-curator.service`:
+
+```ini
+[Unit]
+Description=RSS AI Curator
+After=network.target
+
+[Service]
+Type=simple
+User=youruser
+WorkingDirectory=/path/to/rss-ai-curator
+ExecStart=/path/to/venv/bin/python main.py start
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl enable rss-curator
+sudo systemctl start rss-curator
+sudo systemctl status rss-curator
+```
+
+### Docker Deployment
+
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["python", "main.py", "start"]
+```
+
+Build and run:
+```bash
+docker build -t rss-curator .
+docker run -d --name rss-curator \
+  --env-file .env \
+  -v $(pwd)/data:/app/data \
+  rss-curator
+```
+
+### Backup Strategy
+
+```bash
+# Backup database
+cp data/rss_curator.db data/backups/rss_curator_$(date +%Y%m%d).db
+
+# Backup ChromaDB
+tar -czf data/backups/chromadb_$(date +%Y%m%d).tar.gz data/chromadb/
+```
+
+## Cost Estimation
+
+**Monthly costs** (10-15 feeds, 3h digests):
+
+| Component | Usage | Cost |
+|-----------|-------|------|
+| Embeddings (text-embedding-3-small) | ~100k articles | $0.50 |
+| ChatGPT gpt-4.1-mini | ~5k rankings | $5-10 |
+| ChatGPT gpt-4.1 | ~5k rankings | $30-50 |
+| Claude Sonnet 4.5 | ~5k rankings | $15-25 |
+| **Total** | | **$5-50/mo** |
+
+Optimize by:
+- Using gpt-4.1-mini for most rankings
+- Increasing digest interval (3h → 6h)
+- Reducing candidates sent to LLM (20 → 10)
+
+## Development
+
+### Run Tests
+
+```bash
+pytest tests/
+```
+
+### Add New RSS Feed
+
+Edit `config/config.yaml`:
+```yaml
+rss_feeds:
+  - url: "https://newsite.com/feed"
+    name: "New Site"
+```
+
+Restart bot or run `/fetch`.
+
+### Custom Selection Strategy
+
+Edit `src/context_selector.py` and add new strategy:
+
+```python
+def _select_my_strategy(self, ...):
+    # Your logic here
+    pass
+```
+
+Update config:
+```yaml
+llm_context:
+  selection_strategy: "my_strategy"
+```
 
 ## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+Follows PEP8 with type hints. Keep files under 800 lines. See `AI-python.md` for full guidelines.
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+MIT License - feel free to modify and use!
+
+## Support
+
+- 🐛 Issues: Open GitHub issue
+- 💬 Questions: Check troubleshooting section
+- 📧 Contact: [Your email]
+
+---
+
+**Happy curating! 🎉**
