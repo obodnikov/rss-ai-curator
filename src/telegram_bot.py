@@ -411,13 +411,13 @@ class TelegramBot:
             # Expected results
             if current_min_score > p90:
                 analysis_msg += (
-                    "⚠️ <b>Warning:</b> Current threshold ({current_min_score:.1f}) is very high!\n"
+                    f"⚠️ <b>Warning:</b> Current threshold ({current_min_score:.1f}) is very high!\n"
                     f"Only top {100 - 90}% of articles will pass. "
                     f"You may receive very few articles.\n\n"
                 )
             elif current_min_score < p25:
                 analysis_msg += (
-                    "ℹ️ <b>Note:</b> Current threshold ({current_min_score:.1f}) is low.\n"
+                    f"ℹ️ <b>Note:</b> Current threshold ({current_min_score:.1f}) is low.\n"
                     f"About {100 - 25}% of articles will pass. "
                     f"Good for training phase.\n\n"
                 )
