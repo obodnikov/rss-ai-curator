@@ -389,127 +389,127 @@ class ArticleRanker:
         )
         
         return ranked
-def _filter_by_similarity(
-    self,
-    new_articles: List[Article],
-    liked_articles: List[Article],
-    disliked_articles: List[Article]
-) -> List[Article]:
-    """
-    Filter articles by embedding similarity with balanced source selection.
-    
-    This prevents high-volume sources from dominating the LLM input.
-    """
-    if not liked_articles and not disliked_articles:
-        limit = self.config['filtering']['top_candidates_for_llm']
-        logger.info(f"No training data - returning first {limit} articles")
-        return new_articles[:limit]
-    
-    threshold = self.config['filtering']['similarity_threshold']
-    scored_articles = []
-    
-    # Calculate similarity scores
-    for article in new_articles:
-        embedding = self.embedder.get_article_embedding(article.id)
-        if embedding is None:
-            embedding = self.embedder.embed_article(article)
-            self.embedder.store_article_embedding(article, embedding)
+    def _filter_by_similarity(
+        self,
+        new_articles: List[Article],
+        liked_articles: List[Article],
+        disliked_articles: List[Article]
+    ) -> List[Article]:
+        """
+        Filter articles by embedding similarity with balanced source selection.
         
-        # Calculate liked similarity
-        liked_sims = []
-        for liked in liked_articles:
-            liked_emb = self.embedder.get_article_embedding(liked.id)
-            if liked_emb is not None:
-                sim = self._cosine_similarity(embedding, liked_emb)
-                liked_sims.append(sim)
+        This prevents high-volume sources from dominating the LLM input.
+        """
+        if not liked_articles and not disliked_articles:
+            limit = self.config['filtering']['top_candidates_for_llm']
+            logger.info(f"No training data - returning first {limit} articles")
+            return new_articles[:limit]
         
-        # Calculate disliked similarity
-        disliked_sims = []
-        for disliked in disliked_articles:
-            disliked_emb = self.embedder.get_article_embedding(disliked.id)
-            if disliked_emb is not None:
-                sim = self._cosine_similarity(embedding, disliked_emb)
-                disliked_sims.append(sim)
+        threshold = self.config['filtering']['similarity_threshold']
+        scored_articles = []
         
-        # Combined score
-        liked_score = sum(liked_sims) / len(liked_sims) if liked_sims else 0
-        disliked_score = sum(disliked_sims) / len(disliked_sims) if disliked_sims else 0
-        combined_score = liked_score - 0.3 * disliked_score
+        # Calculate similarity scores
+        for article in new_articles:
+            embedding = self.embedder.get_article_embedding(article.id)
+            if embedding is None:
+                embedding = self.embedder.embed_article(article)
+                self.embedder.store_article_embedding(article, embedding)
+            
+            # Calculate liked similarity
+            liked_sims = []
+            for liked in liked_articles:
+                liked_emb = self.embedder.get_article_embedding(liked.id)
+                if liked_emb is not None:
+                    sim = self._cosine_similarity(embedding, liked_emb)
+                    liked_sims.append(sim)
+            
+            # Calculate disliked similarity
+            disliked_sims = []
+            for disliked in disliked_articles:
+                disliked_emb = self.embedder.get_article_embedding(disliked.id)
+                if disliked_emb is not None:
+                    sim = self._cosine_similarity(embedding, disliked_emb)
+                    disliked_sims.append(sim)
+            
+            # Combined score
+            liked_score = sum(liked_sims) / len(liked_sims) if liked_sims else 0
+            disliked_score = sum(disliked_sims) / len(disliked_sims) if disliked_sims else 0
+            combined_score = liked_score - 0.3 * disliked_score
+            
+            if combined_score >= threshold:
+                scored_articles.append({
+                    'article': article,
+                    'score': combined_score,
+                    'source': article.source
+                })
         
-        if combined_score >= threshold:
-            scored_articles.append({
-                'article': article,
-                'score': combined_score,
-                'source': article.source
-            })
-    
-    # Log statistics
-    if scored_articles:
-        scores = [item['score'] for item in scored_articles]
-        logger.info(
-            f"📊 Similarity stats: {len(scored_articles)}/{len(new_articles)} above {threshold:.3f}\n"
-            f"  • Max: {max(scores):.3f}, Avg: {sum(scores)/len(scores):.3f}"
+        # Log statistics
+        if scored_articles:
+            scores = [item['score'] for item in scored_articles]
+            logger.info(
+                f"📊 Similarity stats: {len(scored_articles)}/{len(new_articles)} above {threshold:.3f}\n"
+                f"  • Max: {max(scores):.3f}, Avg: {sum(scores)/len(scores):.3f}"
+            )
+        
+        # ✨ NEW: Balanced selection by source
+        selected = self._select_balanced_by_source(
+            scored_articles,
+            self.config['filtering']['top_candidates_for_llm']
         )
-    
-    # ✨ NEW: Balanced selection by source
-    selected = self._select_balanced_by_source(
-        scored_articles,
-        self.config['filtering']['top_candidates_for_llm']
-    )
-    
-    return selected
+        
+        return selected
 
-def _select_balanced_by_source(
-    self,
-    scored_articles: List[dict],
-    target_count: int
-) -> List[Article]:
-    """Select articles ensuring balanced source representation."""
-    if not scored_articles:
-        return []
-    
-    from collections import defaultdict
-    
-    # Group by source
-    by_source = defaultdict(list)
-    for item in scored_articles:
-        by_source[item['source']].append(item)
-    
-    # Sort each source by score
-    for source in by_source:
-        by_source[source].sort(key=lambda x: x['score'], reverse=True)
-    
-    # Calculate quota
-    num_sources = len(by_source)
-    quota_per_source = max(1, target_count // num_sources)
-    
-    # First pass: balanced selection
-    selected_items = []
-    for source, items in by_source.items():
-        take_count = min(quota_per_source, len(items))
-        selected_items.extend(items[:take_count])
-    
-    # Second pass: fill remaining with best scores
-    if len(selected_items) < target_count:
-        remaining = []
+    def _select_balanced_by_source(
+        self,
+        scored_articles: List[dict],
+        target_count: int
+    ) -> List[Article]:
+        """Select articles ensuring balanced source representation."""
+        if not scored_articles:
+            return []
+        
+        from collections import defaultdict
+        
+        # Group by source
+        by_source = defaultdict(list)
+        for item in scored_articles:
+            by_source[item['source']].append(item)
+        
+        # Sort each source by score
+        for source in by_source:
+            by_source[source].sort(key=lambda x: x['score'], reverse=True)
+        
+        # Calculate quota
+        num_sources = len(by_source)
+        quota_per_source = max(1, target_count // num_sources)
+        
+        # First pass: balanced selection
+        selected_items = []
         for source, items in by_source.items():
-            remaining.extend(items[quota_per_source:])
-        remaining.sort(key=lambda x: x['score'], reverse=True)
-        needed = target_count - len(selected_items)
-        selected_items.extend(remaining[:needed])
-    
-    # Sort by score and extract articles
-    selected_items.sort(key=lambda x: x['score'], reverse=True)
-    selected_articles = [item['article'] for item in selected_items[:target_count]]
-    
-    # Log distribution
-    distribution = defaultdict(int)
-    for item in selected_items[:target_count]:
-        distribution[item['source']] += 1
-    
-    logger.info(f"📊 Balanced selection: {len(selected_articles)} articles")
-    for source, count in sorted(distribution.items()):
-        logger.info(f"  • {source}: {count} articles")
-    
-    return selected_articles
+            take_count = min(quota_per_source, len(items))
+            selected_items.extend(items[:take_count])
+        
+        # Second pass: fill remaining with best scores
+        if len(selected_items) < target_count:
+            remaining = []
+            for source, items in by_source.items():
+                remaining.extend(items[quota_per_source:])
+            remaining.sort(key=lambda x: x['score'], reverse=True)
+            needed = target_count - len(selected_items)
+            selected_items.extend(remaining[:needed])
+        
+        # Sort by score and extract articles
+        selected_items.sort(key=lambda x: x['score'], reverse=True)
+        selected_articles = [item['article'] for item in selected_items[:target_count]]
+        
+        # Log distribution
+        distribution = defaultdict(int)
+        for item in selected_items[:target_count]:
+            distribution[item['source']] += 1
+        
+        logger.info(f"📊 Balanced selection: {len(selected_articles)} articles")
+        for source, count in sorted(distribution.items()):
+            logger.info(f"  • {source}: {count} articles")
+        
+        return selected_articles
     
