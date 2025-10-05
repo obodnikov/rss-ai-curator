@@ -1,6 +1,7 @@
 """Task scheduling for RSS fetching and digest generation."""
 import logging
 import asyncio
+from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
@@ -110,9 +111,9 @@ class AppScheduler:
         db = self.db_manager.get_session()
         
         try:
-            # Get pending articles (not yet rated)
-            pending = db.query(Article).outerjoin(Feedback).filter(
-                Feedback.id == None
+            # Get pending articles (not shown yet, no feedback)
+            pending = db.query(Article).filter(
+                Article.shown_to_user == False
             ).all()
             
             if not pending:
@@ -155,14 +156,23 @@ class AppScheduler:
                     self.telegram_bot.send_digest(digest_articles)
                 )
                 
-                # Log summary with sent articles
+                # Mark articles as shown
+                now = datetime.utcnow()
+                for article, _, _ in digest_articles:
+                    article.shown_to_user = True
+                    article.shown_at = now
+                
+                db.commit()
+                
+                # Log summary
                 scores_sent = [s for _, s, _ in digest_articles]
                 avg_score_sent = sum(scores_sent) / len(scores_sent)
                 
                 logger.info(
                     f"✅ Digest sent successfully!\n"
                     f"  • Articles sent: {len(digest_articles)}\n"
-                    f"  • Avg score of sent articles: {avg_score_sent:.1f}/10\n"
+                    f"  • Articles marked as shown: {len(digest_articles)}\n"
+                    f"  • Avg score: {avg_score_sent:.1f}/10\n"
                     f"  • Score range: {min(scores_sent):.1f} - {max(scores_sent):.1f}"
                 )
             else:
@@ -190,14 +200,6 @@ class AppScheduler:
                             f"⚠️ Insufficient training data ({len(liked)} likes).\n"
                             f"   System needs 10-15 rated articles for better results.\n"
                             f"   Current performance is expected with limited training."
-                        )
-                    else:
-                        logger.info(
-                            f"💡 You have {len(liked)} liked articles.\n"
-                            f"   Consider:\n"
-                            f"   1. Lowering threshold to {max_score:.1f}\n"
-                            f"   2. Adjusting RSS feeds to match your interests\n"
-                            f"   3. Reviewing your liked/disliked articles for consistency"
                         )
                 else:
                     logger.error(
