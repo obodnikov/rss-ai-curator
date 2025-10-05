@@ -1,10 +1,12 @@
 """LLM-based article ranking."""
 import os
 import logging
+from collections import defaultdict
 from typing import List, Dict, Tuple, Optional
 from sqlalchemy.orm import Session
 from openai import OpenAI
 from anthropic import Anthropic
+import numpy as np
 from .database import Article, Feedback, LLMRanking
 from .embedder import Embedder
 from .context_selector import LLMContextSelector
@@ -395,36 +397,27 @@ class ArticleRanker:
         liked_articles: List[Article],
         disliked_articles: List[Article]
     ) -> List[Article]:
-        """Filter articles by embedding similarity.
+        """
+        Filter articles by embedding similarity with balanced source selection.
         
-        Args:
-            new_articles: Articles to filter
-            liked_articles: Liked articles
-            disliked_articles: Disliked articles
-            
-        Returns:
-            Filtered list of articles
+        This prevents high-volume sources from dominating the LLM input.
         """
         if not liked_articles and not disliked_articles:
-            # No feedback yet, return top candidates by count
             limit = self.config['filtering']['top_candidates_for_llm']
-            logger.info(
-                f"No training data available - returning first {limit} articles"
-            )
+            logger.info(f"No training data - returning first {limit} articles")
             return new_articles[:limit]
         
         threshold = self.config['filtering']['similarity_threshold']
-        candidates = []
-        similarity_scores = []
+        scored_articles = []
         
+        # Calculate similarity scores
         for article in new_articles:
-            # Get or create embedding
             embedding = self.embedder.get_article_embedding(article.id)
             if embedding is None:
                 embedding = self.embedder.embed_article(article)
                 self.embedder.store_article_embedding(article, embedding)
             
-            # Calculate similarity scores
+            # Calculate liked similarity
             liked_sims = []
             for liked in liked_articles:
                 liked_emb = self.embedder.get_article_embedding(liked.id)
@@ -432,6 +425,7 @@ class ArticleRanker:
                     sim = self._cosine_similarity(embedding, liked_emb)
                     liked_sims.append(sim)
             
+            # Calculate disliked similarity
             disliked_sims = []
             for disliked in disliked_articles:
                 disliked_emb = self.embedder.get_article_embedding(disliked.id)
@@ -439,51 +433,89 @@ class ArticleRanker:
                     sim = self._cosine_similarity(embedding, disliked_emb)
                     disliked_sims.append(sim)
             
-            # Calculate combined score
+            # Combined score
             liked_score = sum(liked_sims) / len(liked_sims) if liked_sims else 0
             disliked_score = sum(disliked_sims) / len(disliked_sims) if disliked_sims else 0
-            
             combined_score = liked_score - 0.3 * disliked_score
-            similarity_scores.append(combined_score)
             
             if combined_score >= threshold:
-                candidates.append((article, combined_score))
+                scored_articles.append({
+                    'article': article,
+                    'score': combined_score,
+                    'source': article.source
+                })
         
-        # Log similarity statistics
-        if similarity_scores:
-            max_sim = max(similarity_scores)
-            min_sim = min(similarity_scores)
-            avg_sim = sum(similarity_scores) / len(similarity_scores)
-            
+        # Log statistics
+        if scored_articles:
+            scores = [item['score'] for item in scored_articles]
             logger.info(
-                f"📊 Similarity filtering statistics:\n"
-                f"  • Threshold: {threshold:.3f}\n"
-                f"  • Max similarity: {max_sim:.3f}\n"
-                f"  • Min similarity: {min_sim:.3f}\n"
-                f"  • Avg similarity: {avg_sim:.3f}\n"
-                f"  • Articles above threshold: {len(candidates)}/{len(new_articles)}\n"
-                f"  💡 Suggested threshold: {max(0.3, max_sim - 0.1):.3f} (to get top candidates)"
+                f"📊 Similarity stats: {len(scored_articles)}/{len(new_articles)} above {threshold:.3f}\n"
+                f"  • Max: {max(scores):.3f}, Avg: {sum(scores)/len(scores):.3f}"
             )
         
-        # Sort by combined score and take top N
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        limit = self.config['filtering']['top_candidates_for_llm']
-        
-        selected = [a for a, _ in candidates[:limit]]
-        
-        if not selected and new_articles:
-            logger.warning(
-                f"⚠️ No articles passed similarity threshold {threshold:.3f}. "
-                f"Max similarity was {max(similarity_scores):.3f}. "
-                f"Consider lowering threshold to {max(similarity_scores) * 0.9:.3f}"
-            )
+        # ✨ NEW: Balanced selection by source
+        selected = self._select_balanced_by_source(
+            scored_articles,
+            self.config['filtering']['top_candidates_for_llm']
+        )
         
         return selected
     
+    def _select_balanced_by_source(
+        self,
+        scored_articles: List[dict],
+        target_count: int
+    ) -> List[Article]:
+        """Select articles ensuring balanced source representation."""
+        if not scored_articles:
+            return []
+        
+        # Group by source
+        by_source = defaultdict(list)
+        for item in scored_articles:
+            by_source[item['source']].append(item)
+        
+        # Sort each source by score
+        for source in by_source:
+            by_source[source].sort(key=lambda x: x['score'], reverse=True)
+        
+        # Calculate quota
+        num_sources = len(by_source)
+        quota_per_source = max(1, target_count // num_sources)
+        
+        # First pass: balanced selection
+        selected_items = []
+        for source, items in by_source.items():
+            take_count = min(quota_per_source, len(items))
+            selected_items.extend(items[:take_count])
+        
+        # Second pass: fill remaining with best scores
+        if len(selected_items) < target_count:
+            remaining = []
+            for source, items in by_source.items():
+                remaining.extend(items[quota_per_source:])
+            remaining.sort(key=lambda x: x['score'], reverse=True)
+            needed = target_count - len(selected_items)
+            selected_items.extend(remaining[:needed])
+        
+        # Sort by score and extract articles
+        selected_items.sort(key=lambda x: x['score'], reverse=True)
+        selected_articles = [item['article'] for item in selected_items[:target_count]]
+        
+        # Log distribution
+        distribution = defaultdict(int)
+        for item in selected_items[:target_count]:
+            distribution[item['source']] += 1
+        
+        logger.info(f"📊 Balanced selection: {len(selected_articles)} articles")
+        for source, count in sorted(distribution.items()):
+            logger.info(f"  • {source}: {count} articles")
+        
+        return selected_articles
+    
     @staticmethod
     def _cosine_similarity(vec1, vec2) -> float:
-        """Calculate cosine similarity."""
-        import numpy as np
+        """Calculate cosine similarity between two vectors."""
         norm1 = np.linalg.norm(vec1)
         norm2 = np.linalg.norm(vec2)
         
