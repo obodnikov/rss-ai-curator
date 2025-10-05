@@ -6,4 +6,4 @@
 - Add docstrings only for public functions/classes.
 - Prefer pytest for new tests, but minimal tests are okay.
 - Use logging, not print, for errors.
-- Donâ€™t add new dependencies without a clear reason.
+- Don't add new dependencies without a clear reason.
