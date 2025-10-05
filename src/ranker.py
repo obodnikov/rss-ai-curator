@@ -166,9 +166,12 @@ class ArticleRanker:
                 return self._query_chatgpt(prompt)
             elif self.provider == 'claude':
                 return self._query_claude(prompt)
+            else:
+                logger.error(f"Unknown LLM provider: {self.provider}")
+                return 5.0, f"Unknown provider: {self.provider}"
         except Exception as e:
-            logger.error(f"Error querying LLM: {e}")
-            return 5.0, "Error during ranking"
+            logger.error(f"Error querying LLM ({self.provider}): {e}", exc_info=True)
+            return 5.0, f"Error during ranking: {str(e)}"
     
     def _query_chatgpt(self, prompt: str) -> Tuple[float, str]:
         """Query ChatGPT.
@@ -272,28 +275,117 @@ class ArticleRanker:
             List of (article, score, reasoning) tuples, sorted by score
         """
         if not new_articles:
+            logger.warning("filter_and_rank_candidates: No new articles provided")
             return []
         
-        # Step 1: Embedding-based filtering
-        candidates = self._filter_by_similarity(
-            new_articles, liked_articles, disliked_articles
+        logger.info(
+            f"Starting ranking: {len(new_articles)} new articles, "
+            f"{len(liked_articles)} liked, {len(disliked_articles)} disliked"
         )
         
-        logger.info(
-            f"Filtered {len(new_articles)} articles to "
-            f"{len(candidates)} candidates using embeddings"
-        )
+        # Step 1: Embedding-based filtering
+        try:
+            candidates = self._filter_by_similarity(
+                new_articles, liked_articles, disliked_articles
+            )
+            
+            logger.info(
+                f"Filtered {len(new_articles)} articles to "
+                f"{len(candidates)} candidates using embeddings"
+            )
+        except Exception as e:
+            logger.error(f"Error in similarity filtering: {e}", exc_info=True)
+            # Fallback: use first N articles
+            limit = self.config['filtering']['top_candidates_for_llm']
+            candidates = new_articles[:limit]
+            logger.warning(f"Using fallback: first {len(candidates)} articles")
+        
+        if not candidates:
+            logger.warning("No candidates after filtering")
+            return []
         
         # Step 2: LLM ranking
         ranked = []
-        for article in candidates:
-            score, reasoning = self.rank_article(
-                db, article, liked_articles, disliked_articles
+        for i, article in enumerate(candidates, 1):
+            try:
+                logger.debug(f"Ranking article {i}/{len(candidates)}: {article.title[:50]}...")
+                score, reasoning = self.rank_article(
+                    db, article, liked_articles, disliked_articles
+                )
+                ranked.append((article, score, reasoning))
+                logger.debug(f"Article {i} scored: {score}/10")
+            except Exception as e:
+                logger.error(
+                    f"Error ranking article {article.id} ('{article.title[:50]}...'): {e}",
+                    exc_info=True
+                )
+                # Continue with other articles instead of failing completely
+                continue
+        
+        if not ranked:
+            logger.error(
+                f"All {len(candidates)} candidates failed to rank! "
+                f"Check LLM configuration and API keys."
             )
-            ranked.append((article, score, reasoning))
+            return []
         
         # Sort by score
         ranked.sort(key=lambda x: x[1], reverse=True)
+        
+        # Log detailed LLM ranking statistics
+        scores = [s for _, s, _ in ranked]
+        max_score = max(scores)
+        min_score = min(scores)
+        avg_score = sum(scores) / len(scores)
+        
+        # Calculate score distribution
+        score_ranges = {
+            '0-3': len([s for s in scores if s < 3]),
+            '3-5': len([s for s in scores if 3 <= s < 5]),
+            '5-7': len([s for s in scores if 5 <= s < 7]),
+            '7-9': len([s for s in scores if 7 <= s < 9]),
+            '9-10': len([s for s in scores if s >= 9])
+        }
+        
+        current_threshold = self.config['filtering'].get('min_score_to_show', 7.0)
+        above_threshold = len([s for s in scores if s >= current_threshold])
+        
+        # Calculate optimal threshold suggestions
+        percentile_75 = sorted(scores)[int(len(scores) * 0.75)] if scores else 0
+        percentile_90 = sorted(scores)[int(len(scores) * 0.90)] if scores else 0
+        
+        logger.info(
+            f"📊 LLM ranking statistics:\n"
+            f"  • Articles ranked: {len(ranked)}\n"
+            f"  • Max score: {max_score:.1f}/10\n"
+            f"  • Min score: {min_score:.1f}/10\n"
+            f"  • Avg score: {avg_score:.1f}/10\n"
+            f"  • Current threshold: {current_threshold:.1f}/10\n"
+            f"  • Articles above threshold: {above_threshold}/{len(ranked)}\n"
+            f"\n"
+            f"  Score distribution:\n"
+            f"    0-3: {score_ranges['0-3']} articles\n"
+            f"    3-5: {score_ranges['3-5']} articles\n"
+            f"    5-7: {score_ranges['5-7']} articles\n"
+            f"    7-9: {score_ranges['7-9']} articles\n"
+            f"    9-10: {score_ranges['9-10']} articles\n"
+            f"\n"
+            f"  💡 Threshold suggestions:\n"
+            f"    • For top 25%: {percentile_75:.1f}\n"
+            f"    • For top 10%: {percentile_90:.1f}\n"
+            f"    • For guaranteed articles: {max(min_score, max_score - 1.0):.1f}\n"
+        )
+        
+        if above_threshold == 0 and ranked:
+            logger.warning(
+                f"⚠️ No articles passed threshold {current_threshold:.1f}/10!\n"
+                f"   Highest score was {max_score:.1f}/10\n"
+                f"   💡 Recommendation: Lower min_score_to_show to {max(3.0, max_score - 0.5):.1f}"
+            )
+        
+        logger.info(
+            f"Ranking complete: {len(ranked)}/{len(candidates)} articles ranked successfully"
+        )
         
         return ranked
     
@@ -316,10 +408,14 @@ class ArticleRanker:
         if not liked_articles and not disliked_articles:
             # No feedback yet, return top candidates by count
             limit = self.config['filtering']['top_candidates_for_llm']
+            logger.info(
+                f"No training data available - returning first {limit} articles"
+            )
             return new_articles[:limit]
         
         threshold = self.config['filtering']['similarity_threshold']
         candidates = []
+        similarity_scores = []
         
         for article in new_articles:
             # Get or create embedding
@@ -348,15 +444,41 @@ class ArticleRanker:
             disliked_score = sum(disliked_sims) / len(disliked_sims) if disliked_sims else 0
             
             combined_score = liked_score - 0.3 * disliked_score
+            similarity_scores.append(combined_score)
             
             if combined_score >= threshold:
                 candidates.append((article, combined_score))
+        
+        # Log similarity statistics
+        if similarity_scores:
+            max_sim = max(similarity_scores)
+            min_sim = min(similarity_scores)
+            avg_sim = sum(similarity_scores) / len(similarity_scores)
+            
+            logger.info(
+                f"📊 Similarity filtering statistics:\n"
+                f"  • Threshold: {threshold:.3f}\n"
+                f"  • Max similarity: {max_sim:.3f}\n"
+                f"  • Min similarity: {min_sim:.3f}\n"
+                f"  • Avg similarity: {avg_sim:.3f}\n"
+                f"  • Articles above threshold: {len(candidates)}/{len(new_articles)}\n"
+                f"  💡 Suggested threshold: {max(0.3, max_sim - 0.1):.3f} (to get top candidates)"
+            )
         
         # Sort by combined score and take top N
         candidates.sort(key=lambda x: x[1], reverse=True)
         limit = self.config['filtering']['top_candidates_for_llm']
         
-        return [a for a, _ in candidates[:limit]]
+        selected = [a for a, _ in candidates[:limit]]
+        
+        if not selected and new_articles:
+            logger.warning(
+                f"⚠️ No articles passed similarity threshold {threshold:.3f}. "
+                f"Max similarity was {max(similarity_scores):.3f}. "
+                f"Consider lowering threshold to {max(similarity_scores) * 0.9:.3f}"
+            )
+        
+        return selected
     
     @staticmethod
     def _cosine_similarity(vec1, vec2) -> float:

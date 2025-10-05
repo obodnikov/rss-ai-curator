@@ -128,6 +128,11 @@ class AppScheduler:
                 Feedback.rating == 'dislike'
             ).all()
             
+            logger.info(
+                f"Digest input: {len(pending)} pending, "
+                f"{len(liked)} liked, {len(disliked)} disliked"
+            )
+            
             # Filter and rank articles
             ranked = self.ranker.filter_and_rank_candidates(
                 db, pending, liked, disliked
@@ -149,9 +154,59 @@ class AppScheduler:
                 asyncio.run(
                     self.telegram_bot.send_digest(digest_articles)
                 )
-                logger.info(f"Digest sent with {len(digest_articles)} articles")
+                
+                # Log summary with sent articles
+                scores_sent = [s for _, s, _ in digest_articles]
+                avg_score_sent = sum(scores_sent) / len(scores_sent)
+                
+                logger.info(
+                    f"✅ Digest sent successfully!\n"
+                    f"  • Articles sent: {len(digest_articles)}\n"
+                    f"  • Avg score of sent articles: {avg_score_sent:.1f}/10\n"
+                    f"  • Score range: {min(scores_sent):.1f} - {max(scores_sent):.1f}"
+                )
             else:
-                logger.info("No articles met the score threshold for digest")
+                # Log detailed statistics when no articles meet threshold
+                if ranked:
+                    scores = [s for _, s, _ in ranked]
+                    max_score = max(scores)
+                    avg_score = sum(scores) / len(scores)
+                    
+                    logger.warning(
+                        f"❌ No articles met score threshold!\n"
+                        f"  • Threshold: {min_score}/10\n"
+                        f"  • Max score: {max_score:.1f}/10\n"
+                        f"  • Avg score: {avg_score:.1f}/10\n"
+                        f"  • Ranked: {len(ranked)} articles\n"
+                        f"  • Training data: {len(liked)} liked, {len(disliked)} disliked\n"
+                        f"\n"
+                        f"  💡 Configuration recommendations:\n"
+                        f"    • Lower min_score_to_show to: {max(3.0, max_score - 0.5):.1f}\n"
+                        f"    • Or wait until you have 10+ liked articles"
+                    )
+                    
+                    if len(liked) < 5:
+                        logger.info(
+                            f"⚠️ Insufficient training data ({len(liked)} likes).\n"
+                            f"   System needs 10-15 rated articles for better results.\n"
+                            f"   Current performance is expected with limited training."
+                        )
+                    else:
+                        logger.info(
+                            f"💡 You have {len(liked)} liked articles.\n"
+                            f"   Consider:\n"
+                            f"   1. Lowering threshold to {max_score:.1f}\n"
+                            f"   2. Adjusting RSS feeds to match your interests\n"
+                            f"   3. Reviewing your liked/disliked articles for consistency"
+                        )
+                else:
+                    logger.error(
+                        f"❌ Ranking failed completely!\n"
+                        f"  • Pending articles: {len(pending)}\n"
+                        f"  • Articles ranked: 0\n"
+                        f"  • This indicates an issue with embeddings or LLM.\n"
+                        f"  • Check API keys and LLM configuration."
+                    )
         
         except Exception as e:
             logger.error(f"Error in digest generation job: {e}")
