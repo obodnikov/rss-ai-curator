@@ -608,7 +608,7 @@ class TelegramBot:
         finally:
             db.close()
     
-    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle button callbacks."""
         query = update.callback_query
         await query.answer()
@@ -630,7 +630,7 @@ class TelegramBot:
             ).first()
             
             if not article:
-                await query.edit_message_text("Article not found.")
+                await query.answer("Article not found.", show_alert=True)
                 return
             
             # Check if feedback already exists
@@ -656,40 +656,45 @@ class TelegramBot:
             
             db.commit()
             
-            # Keep original message text and add feedback indicator
+            # Show feedback in the button callback popup (non-intrusive)
             emoji = "👍" if action == "like" else "👎"
-            original_text = query.message.text
+            await query.answer(
+                f"{emoji} Feedback {feedback_msg}!",
+                show_alert=False
+            )
             
-            # Remove old feedback line if exists
-            lines = original_text.split('\n')
-            filtered_lines = [line for line in lines if not line.startswith(('👍', '👎'))]
-            updated_text = '\n'.join(filtered_lines)
-            
-            # Add new feedback line
-            updated_text += f"\n\n{emoji} Your feedback has been {feedback_msg}!"
-            
-            # Update message without removing buttons
-            # IMPORTANT: Keep disable_web_page_preview=True to prevent link preview issues
+            # Update button appearance to show which was selected
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-            keyboard = [
-                [
-                    InlineKeyboardButton("👍 Like", callback_data=f"like_{article.id}"),
-                    InlineKeyboardButton("👎 Dislike", callback_data=f"dislike_{article.id}")
+            
+            # Highlight the selected button
+            if action == "like":
+                keyboard = [
+                    [
+                        InlineKeyboardButton("✅ Liked", callback_data=f"like_{article.id}"),
+                        InlineKeyboardButton("👎 Dislike", callback_data=f"dislike_{article.id}")
+                    ]
                 ]
-            ]
+            else:
+                keyboard = [
+                    [
+                        InlineKeyboardButton("👍 Like", callback_data=f"like_{article.id}"),
+                        InlineKeyboardButton("✅ Disliked", callback_data=f"dislike_{article.id}")
+                    ]
+                ]
+            
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text(
-                text=updated_text,
-                reply_markup=reply_markup,
-                parse_mode='HTML',
-                disable_web_page_preview=True  # Disable preview to allow editing
-            )
+            # Update only the buttons, NOT the message text
+            # This preserves the preview!
+            await query.edit_message_reply_markup(reply_markup=reply_markup)
             
             logger.info(
                 f"User {user_id} rated article {article_id} as {action}"
             )
         
+        except Exception as e:
+            logger.error(f"Error in button callback: {e}")
+            await query.answer(f"Error: {str(e)}", show_alert=True)
         finally:
             db.close()
     
