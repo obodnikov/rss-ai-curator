@@ -420,7 +420,7 @@ class ArticleRanker:
             for liked in liked_articles:
                 liked_emb = self.embedder.get_article_embedding(liked.id)
                 if liked_emb is not None:
-                    sim = self._cosine_similarity(embedding, liked_emb)
+                    sim = ArticleRanker._cosine_similarity(embedding, liked_emb)
                     liked_sims.append(sim)
             
             # Calculate disliked similarity
@@ -428,7 +428,7 @@ class ArticleRanker:
             for disliked in disliked_articles:
                 disliked_emb = self.embedder.get_article_embedding(disliked.id)
                 if disliked_emb is not None:
-                    sim = self._cosine_similarity(embedding, disliked_emb)
+                    sim = ArticleRanker._cosine_similarity(embedding, disliked_emb)
                     disliked_sims.append(sim)
             
             # Combined score
