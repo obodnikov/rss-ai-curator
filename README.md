@@ -5,6 +5,7 @@ AI-powered RSS feed aggregator that learns your preferences and sends personaliz
 ## Features
 
 - 🔍 **Smart Filtering**: Hybrid approach using embeddings + LLM ranking
+- ⚖️ **Balanced Source Selection**: NEW! Fair representation across all RSS sources
 - 🧠 **Preference Learning**: Like/dislike feedback trains the system
 - 🤖 **Multi-LLM Support**: Claude Sonnet 4.5 or ChatGPT (4.1, 4.1-mini, 5, 5-mini)
 - 📱 **Telegram Bot**: Private chat with interactive buttons
@@ -14,11 +15,83 @@ AI-powered RSS feed aggregator that learns your preferences and sends personaliz
 ## Architecture
 
 ```
-RSS Feeds → Embeddings → Similarity Filter → LLM Ranker → Telegram Bot
-              ↓                                    ↓
-         ChromaDB                            Your Feedback
-                                                  ↓
-                                         Continuous Learning
+RSS Feeds → Embeddings → Similarity Filter → Balanced Selection → LLM Ranker → Telegram Bot
+              ↓                                      ↓                  ↓
+         ChromaDB                          Fair Source Quota      Your Feedback
+                                                                        ↓
+                                                              Continuous Learning
+```
+
+## 🆕 Balanced Source Selection (NEW!)
+
+### The Problem
+High-volume sources (like TechCrunch with 100 articles/day) would dominate the digest, while rare but high-quality sources (like AI research blogs with 2 articles/week) would be ignored.
+
+### The Solution
+**Two-stage selection process:**
+
+1. **Similarity Filtering** (Quality gate)
+   - Articles scored by similarity to your preferences
+   - Only articles above threshold pass through
+
+2. **Balanced Selection** (Fairness)
+   - Each source gets proportional quota
+   - Rare sources: ALL their articles included
+   - High-volume sources: Limited to fair quota
+   - Remaining slots: Filled with highest scores
+
+### Example Flow
+
+**Before (Biased):**
+```
+TechCrunch: 100 articles → 25 selected (flooded!)
+AI Blog: 3 articles → 0 selected (ignored!)
+Hacker News: 50 articles → 5 selected
+→ Total: 30 for LLM (mostly TechCrunch)
+```
+
+**After (Balanced):**
+```
+TechCrunch: 100 articles → 6 selected (quota)
+AI Blog: 3 articles → 3 selected (all!)
+Hacker News: 50 articles → 6 selected (quota)
+Medium: 40 articles → 6 selected (quota)
+Reddit: 30 articles → 6 selected (quota)
+... remaining 3 slots filled with top scores
+→ Total: 30 for LLM (diverse & fair!)
+```
+
+### Configuration
+
+The balanced selection respects your existing config:
+
+```yaml
+filtering:
+  similarity_threshold: 0.7      # Pre-filter by quality (unchanged)
+  top_candidates_for_llm: 30     # Balanced selection target
+  articles_per_digest: 10         # LLM picks final 10
+  min_score_to_show: 7.0         # Score threshold for digest
+```
+
+### Monitoring
+
+Check logs to see balanced distribution:
+
+```bash
+tail -50 logs/rss_curator.log | grep "📊"
+```
+
+You'll see:
+```
+📊 Similarity stats: 85/223 above 0.700
+  • Max: 0.856, Avg: 0.743
+📊 Balanced selection: 30 articles
+  • TechCrunch: 6 articles
+  • AI Research Blog: 3 articles
+  • Hacker News: 6 articles
+  • Medium: 6 articles
+  • Reddit r/ML: 6 articles
+  • Elements.ru: 3 articles
 ```
 
 ## Quick Start
@@ -90,10 +163,11 @@ rss_feeds:
   # Add your 10-15 feeds here
 ```
 
+**Important:** The balanced selection works best with **5-15 diverse sources**. Mix high-volume and low-volume sources for optimal results.
+
 ### 4. Initialize Database
 
 ```bash
-# First run creates database and tables
 python main.py init
 ```
 
@@ -103,19 +177,11 @@ python main.py init
 python main.py start
 ```
 
-You should see:
-```
-INFO: Database initialized
-INFO: Scheduler started with all jobs
-INFO: Telegram bot started
-INFO: RSS AI Curator is running...
-```
-
 ### 6. Test in Telegram
 
 1. Open Telegram and search for your bot
 2. Send `/start` to begin
-3. Wait for first digest (3 hours) or send `/fetch` to fetch immediately
+3. Wait for first digest (3 hours) or send `/fetch` then `/digest`
 4. Click 👍 Like or 👎 Dislike on articles
 5. System learns your preferences!
 
@@ -130,9 +196,7 @@ INFO: RSS AI Curator is running...
 - `/cleanup` - Run cleanup now
 - `/help` - Show all commands
 
-### How Commands Work
-
-#### **The Complete Workflow:**
+### The Complete Workflow
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -140,111 +204,62 @@ INFO: RSS AI Curator is running...
 │ ↓                                               │
 │ Download articles from RSS feeds                │
 │ ↓                                               │
-│ Save to database (data/rss_curator.db)         │
+│ Save to database                                │
 │ ↓                                               │
 │ [ARTICLES ARE NOW PENDING]                      │
 └─────────────────────────────────────────────────┘
-           ⏳ Nothing sent yet!
 
 ┌─────────────────────────────────────────────────┐
 │ /digest (or automatic every 3 hours)           │
 │ ↓                                               │
-│ Get pending articles from database              │
-│ ↓                                               │
 │ Create embeddings for each article              │
 │ ↓                                               │
-│ Filter by similarity (if you have liked items)  │
+│ Filter by similarity (if training data exists)  │
 │ ↓                                               │
-│ Send top candidates to LLM for ranking          │
+│ ⚖️ NEW: Balance by source (fair quota)         │
+│ ↓                                               │
+│ Send 30 balanced candidates to LLM              │
+│ ↓                                               │
+│ LLM ranks all 30 and gives scores              │
 │ ↓                                               │
 │ Keep only articles scoring 7.0+                 │
 │ ↓                                               │
-│ Send top 8 articles to you with buttons         │
+│ Send top 10 articles to you with buttons        │
 └─────────────────────────────────────────────────┘
 ```
 
-#### **Command Details:**
+## Project Structure
 
-**`/fetch` - Download Articles**
-- Downloads new articles from all configured RSS feeds
-- Saves them to database (unprocessed)
-- Response: "✅ Found X new articles"
-- **Note:** Does NOT send articles to you yet!
-- Use this when you want to update your article pool
+```
+rss-ai-curator/
+├── config/
+│   ├── config.yaml          # Main configuration
+│   └── .env                 # API keys (git-ignored)
+├── src/
+│   ├── __init__.py
+│   ├── database.py          # SQLAlchemy models
+│   ├── fetcher.py           # RSS aggregation
+│   ├── embedder.py          # OpenAI embeddings
+│   ├── context_selector.py # Smart example selection
+│   ├── cleanup.py           # Article retention
+│   ├── ranker.py            # ⚖️ LLM ranking (with balanced selection)
+│   ├── telegram_bot.py      # Bot handlers
+│   └── scheduler.py         # Cron jobs
+├── data/                    # Created at runtime
+│   ├── rss_curator.db       # SQLite database
+│   └── chromadb/            # Vector embeddings
+├── logs/                    # Application logs
+├── main.py                  # Entry point
+├── requirements.txt
+└── README.md
+```
 
-**`/digest` - Process & Send Articles**
-- Takes pending articles from database
-- Creates embeddings (if not already done)
-- Filters by similarity to your preferences
-- Ranks with LLM (ChatGPT or Claude)
-- Sends top 8 articles with 👍/👎 buttons
-- Response: "✅ Sent X articles"
-- **Note:** First digest may be random (no training data yet)
-
-**`/stats` - View Statistics**
-- Shows your preference counts
-- Displays database size
-- Lists cleanup history
-- Example output:
-  ```
-  📊 Your Preference Stats
-  
-  👍 Liked: 42 articles
-  👎 Disliked: 18 articles
-  📰 Total articles: 1,247
-  🗑️ Cleaned up: 856 articles
-  💾 Database size: 15.3 MB
-  ```
-
-**`/cleanup` - Remove Old Articles**
-- Runs cleanup based on retention policies
-- Deletes neutral articles older than 30 days
-- Deletes disliked articles older than 90 days
-- Deletes liked articles older than 365 days
-- Enforces max limits (1000 liked, 500 disliked)
-- Response: Shows deleted/kept counts
-
-#### **Why Are Fetch and Digest Separate?**
-
-**Separation of Concerns:**
-
-1. **Fetch** (Fast & Cheap)
-   - Runs every 1 hour automatically
-   - Just downloads content
-   - No API costs
-
-2. **Digest** (Slow & Uses API Credits)
-   - Runs every 3 hours automatically
-   - Processes with embeddings + LLM
-   - Costs money per article ranked
-
-**Benefits:**
-- Stay up-to-date (frequent fetching)
-- Control API costs (less frequent processing)
-- Manually trigger digest when you want articles
-
-#### **The Cold Start Problem**
-
-When you first start, you have **0 liked articles** (no training data).
-
-**First Digest:**
-- System has no preferences to learn from
-- Sends ~20 random articles to LLM for generic scoring
-- Results may not match your interests
-
-**After 10-20 Ratings:**
-- Similarity filter activates
-- Only articles similar to your likes are processed
-- LLM gets better examples to compare against
-- Recommendations improve dramatically!
-
-**Tip:** Rate 15-20 articles in your first session to train the system quickly.
-
-### Configuration Options
+## Configuration Options
 
 See `config/config.yaml` for:
 
 - **LLM Settings**: Switch between Claude/ChatGPT, select model
+- **⚖️ Balanced Selection**: Configure fairness (uses top_candidates_for_llm)
 - **Context Limits**: How many examples to show LLM (default: 10 liked, 5 disliked)
 - **Cleanup Policy**: Article retention (liked: 365d, disliked: 90d, neutral: 30d)
 - **Scheduling**: Fetch interval (1h), digest interval (3h)
@@ -267,62 +282,6 @@ llm:
   
   claude:
     model: "claude-sonnet-4-5-20250929"
-```
-
-**Response Language Options:**
-- `English` - AI explains in English
-- `Hungarian` - AI explains in Hungarian (Magyar)
-- `Spanish` - AI explains in Spanish (Español)
-- `French` - AI explains in French (Français)
-- `German` - AI explains in German (Deutsch)
-- Any other language supported by the LLM
-
-**Response Length Options:**
-- `concise` - 1 sentence, max 15 words (saves tokens, faster)
-- `medium` - 2 sentences, max 30 words (balanced)
-- `detailed` - 3-4 sentences with full reasoning (comprehensive)
-
-**Example with Hungarian:**
-```yaml
-llm:
-  response_language: "Hungarian"
-  response_length: "concise"
-```
-
-Result in Telegram:
-```
-💡 Why you might like this:
-Ez a cikk az AI etikáról szól, amit korábban kedveltél.
-```
-
-**Note:** Bot interface (commands, buttons, headers) remain in English. Only the AI's reasoning ("Why you might like this") appears in the configured language.
-
-Restart the bot to apply changes.
-
-## Project Structure
-
-```
-rss-ai-curator/
-├── config/
-│   ├── config.yaml          # Main configuration
-│   └── .env                 # API keys (git-ignored)
-├── src/
-│   ├── __init__.py
-│   ├── database.py          # SQLAlchemy models
-│   ├── fetcher.py           # RSS aggregation
-│   ├── embedder.py          # OpenAI embeddings
-│   ├── context_selector.py # Smart example selection
-│   ├── cleanup.py           # Article retention
-│   ├── ranker.py            # LLM ranking logic
-│   ├── telegram_bot.py      # Bot handlers
-│   └── scheduler.py         # Cron jobs
-├── data/                    # Created at runtime
-│   ├── rss_curator.db       # SQLite database
-│   └── chromadb/            # Vector embeddings
-├── logs/                    # Application logs
-├── main.py                  # Entry point
-├── requirements.txt
-└── README.md
 ```
 
 ## Monitoring
@@ -351,45 +310,102 @@ Output:
 💾 Database size: 15.3 MB
 ```
 
-### Database Inspection
+### Monitor Source Balance
 
-```bash
-sqlite3 data/rss_curator.db
+Look for these logs after each digest:
 
-.tables
-SELECT COUNT(*) FROM articles;
-SELECT * FROM feedback LIMIT 10;
+```
+📊 Similarity stats: 85/223 above 0.700
+  • Max: 0.856, Avg: 0.743
+
+📊 Balanced selection: 30 articles
+  • TechCrunch: 6 articles
+  • AI Research Blog: 3 articles
+  • Hacker News: 6 articles
+  • Medium: 6 articles
+  • Reddit r/ML: 6 articles
+  • Elements.ru: 3 articles
 ```
 
 ## Troubleshooting
 
-### Bot not responding
-
-1. Check bot is running: `ps aux | grep main.py`
-2. Check logs: `tail -f logs/rss_curator.log`
-3. Verify token: `echo $TELEGRAM_BOT_TOKEN`
-
 ### No articles in digest
 
-1. Check RSS feeds are accessible: test URLs in browser
-2. Check similarity threshold isn't too high (config.yaml)
-3. Run immediate fetch: `/fetch` in Telegram
-4. Check you have some liked articles for comparison
+**Possible causes:**
+
+1. **Similarity threshold too high**
+   ```yaml
+   # Lower from 0.7 to 0.5
+   similarity_threshold: 0.5
+   ```
+
+2. **Score threshold too high**
+   ```yaml
+   # Lower from 7.0 to 5.0
+   min_score_to_show: 5.0
+   ```
+
+3. **Not enough training data**
+   - Rate 10-15 articles first
+   - System needs feedback to learn
+
+### Source imbalance in logs
+
+If you see:
+```
+📊 Balanced selection: 30 articles
+  • TechCrunch: 28 articles  ← Still dominated!
+  • Other: 2 articles
+```
+
+**This means:**
+- Only TechCrunch articles passed similarity filter
+- Other sources scored below threshold
+- Solution: Lower `similarity_threshold` or add more diverse training data
 
 ### High API costs
 
-1. Reduce `top_candidates_for_llm` in config (default: 20)
-2. Switch to cheaper model: `gpt-4.1-mini` instead of `gpt-4.1`
-3. Increase digest interval: 6h instead of 3h
-4. Reduce `max_liked_examples` from 10 to 5
+1. Reduce `top_candidates_for_llm` (30 → 20)
+2. Switch to cheaper model: `gpt-4.1-mini`
+3. Increase digest interval (3h → 6h)
+4. Reduce `max_liked_examples` (10 → 5)
 
-### Database too large
+## Cost Estimation
 
-1. Reduce retention days in config
-2. Run cleanup manually: `/cleanup` in Telegram
-3. Lower max article limits (liked: 1000 → 500)
+**Monthly costs** (10-15 feeds, 3h digests):
+
+| Component | Usage | Cost |
+|-----------|-------|------|
+| Embeddings (text-embedding-3-small) | ~100k articles | $0.50 |
+| ChatGPT gpt-4.1-mini | ~5k rankings | $5-10 |
+| ChatGPT gpt-4.1 | ~5k rankings | $30-50 |
+| Claude Sonnet 4.5 | ~5k rankings | $15-25 |
+| **Total** | | **$5-50/mo** |
 
 ## Advanced Usage
+
+### Optimizing Source Balance
+
+**For maximum diversity:**
+```yaml
+filtering:
+  similarity_threshold: 0.5      # Lower = more sources pass
+  top_candidates_for_llm: 50     # More slots to distribute
+```
+
+**For maximum quality:**
+```yaml
+filtering:
+  similarity_threshold: 0.8      # Higher = only best articles
+  top_candidates_for_llm: 20     # Fewer, higher-quality candidates
+```
+
+**Recommended (balanced):**
+```yaml
+filtering:
+  similarity_threshold: 0.7      # Good quality gate
+  top_candidates_for_llm: 30     # Fair distribution
+```
 
 ### Run as systemd service (Linux)
 
@@ -417,92 +433,6 @@ sudo systemctl enable rss-curator
 sudo systemctl start rss-curator
 sudo systemctl status rss-curator
 ```
-
-### Docker Deployment
-
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-CMD ["python", "main.py", "start"]
-```
-
-Build and run:
-```bash
-docker build -t rss-curator .
-docker run -d --name rss-curator \
-  --env-file .env \
-  -v $(pwd)/data:/app/data \
-  rss-curator
-```
-
-### Backup Strategy
-
-```bash
-# Backup database
-cp data/rss_curator.db data/backups/rss_curator_$(date +%Y%m%d).db
-
-# Backup ChromaDB
-tar -czf data/backups/chromadb_$(date +%Y%m%d).tar.gz data/chromadb/
-```
-
-## Cost Estimation
-
-**Monthly costs** (10-15 feeds, 3h digests):
-
-| Component | Usage | Cost |
-|-----------|-------|------|
-| Embeddings (text-embedding-3-small) | ~100k articles | $0.50 |
-| ChatGPT gpt-4.1-mini | ~5k rankings | $5-10 |
-| ChatGPT gpt-4.1 | ~5k rankings | $30-50 |
-| Claude Sonnet 4.5 | ~5k rankings | $15-25 |
-| **Total** | | **$5-50/mo** |
-
-Optimize by:
-- Using gpt-4.1-mini for most rankings
-- Increasing digest interval (3h → 6h)
-- Reducing candidates sent to LLM (20 → 10)
-
-## Development
-
-### Run Tests
-
-```bash
-pytest tests/
-```
-
-### Add New RSS Feed
-
-Edit `config/config.yaml`:
-```yaml
-rss_feeds:
-  - url: "https://newsite.com/feed"
-    name: "New Site"
-```
-
-Restart bot or run `/fetch`.
-
-### Custom Selection Strategy
-
-Edit `src/context_selector.py` and add new strategy:
-
-```python
-def _select_my_strategy(self, ...):
-    # Your logic here
-    pass
-```
-
-Update config:
-```yaml
-llm_context:
-  selection_strategy: "my_strategy"
-```
-
-## Contributing
-
-Follows PEP8 with type hints. Keep files under 800 lines. See `AI-python.md` for full guidelines.
 
 ## License
 
