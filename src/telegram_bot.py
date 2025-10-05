@@ -1,7 +1,7 @@
 """Telegram bot interface."""
 import os
 import logging
-from typing import Optional
+from typing import Optional, List, Tuple
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -99,6 +99,7 @@ class TelegramBot:
             "3. I send you the most relevant ones\n"
             "4. You rate them with 👍 or 👎\n"
             "5. I learn and improve!\n\n"
+            "✨ New: Articles are shown only once - no duplicates!\n\n"  # ADDED
             "Use /help to see all commands."
         )
         
@@ -120,7 +121,8 @@ class TelegramBot:
             "/debug - Show diagnostic information\n"
             "/analyze - Analyze config & suggest optimal settings\n\n"
             "The bot automatically fetches and sends articles every few hours. "
-            "Just rate them with the buttons!"
+            "Just rate them with the buttons!\n\n"
+            "✨ Each article is shown only once - no need to rate everything!"  # ADDED
         )
         
         await update.effective_message.reply_text(help_msg)
@@ -141,13 +143,15 @@ class TelegramBot:
             
             stats_msg = (
                 "📊 Your Preference Stats\n\n"
+                f"👁️ Shown: {stats['shown_articles']} articles\n"  # ADDED
                 f"👍 Liked: {stats['liked_articles']} articles\n"
                 f"👎 Disliked: {stats['disliked_articles']} articles\n"
                 f"📰 Total articles: {stats['total_articles']}\n"
                 f"🗑️ Cleaned up: {stats['total_deleted']} articles\n"
-                f"💾 Database size: {stats['db_size_mb']:.1f} MB"
+                f"💾 Database size: {stats['db_size_mb']:.1f} MB\n\n"
+                f"ℹ️ Shown articles won't be re-ranked in future digests"  # ADDED
             )
-            
+                        
             await update.effective_message.reply_text(stats_msg)
         
         finally:
@@ -203,8 +207,11 @@ class TelegramBot:
             
             # Get article counts
             total_articles = db.query(Article).count()
-            pending = db.query(Article).outerjoin(Feedback).filter(
-                Feedback.id == None
+            pending = db.query(Article).filter(
+                Article.shown_to_user == False
+            ).count()
+            shown = db.query(Article).filter(
+                Article.shown_to_user == True
             ).count()
             liked = db.query(Feedback).filter(
                 Feedback.rating == 'like'
@@ -249,7 +256,8 @@ class TelegramBot:
                 
                 "<b>Database:</b>\n"
                 f"• Total articles: {total_articles}\n"
-                f"• Pending (unrated): {pending}\n"
+                f"• Pending (not shown): {pending}\n"  # CHANGED
+                f"• Shown to user: {shown}\n"  # ADDED
                 f"• Liked: {liked}\n"
                 f"• Disliked: {disliked}\n\n"
                 
@@ -466,13 +474,17 @@ class TelegramBot:
             embedder = Embedder(self.config)
             ranker = ArticleRanker(self.config, embedder)
             
-            # Get pending articles
-            pending = db.query(Article).outerjoin(Feedback).filter(
-                Feedback.id == None
+            # Get pending articles (not shown yet)
+            pending = db.query(Article).filter(
+                Article.shown_to_user == False
             ).all()
             
             if not pending:
-                await update.effective_message.reply_text("ℹ️ No pending articles to rank")
+                await update.effective_message.reply_text(
+                    "ℹ️ No pending articles to rank\n\n"
+                    "All articles have been shown already.\n"
+                    "Run /fetch to get new articles."
+                )
                 return
             
             # Get user feedback history
@@ -504,9 +516,19 @@ class TelegramBot:
             
             if digest_articles:
                 await self.send_digest(digest_articles)
+                
+                # Mark articles as shown
+                now = datetime.utcnow()
+                for article, _, _ in digest_articles:
+                    article.shown_to_user = True
+                    article.shown_at = now
+                
+                db.commit()
+                
                 await update.effective_message.reply_text(
                     f"✅ Digest sent!\n\n"
-                    f"📬 Sent {len(digest_articles)} articles"
+                    f"📬 Sent {len(digest_articles)} articles\n"
+                    f"✅ Marked as shown (won't re-rank)"  # ADDED
                 )
                 logger.info(f"Manual digest triggered by user {user_id}: {len(digest_articles)} articles")
             else:
@@ -737,7 +759,7 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error sending article {article.id}: {e}")
     
-    async def send_digest(self, articles_with_scores: list):
+    async def send_digest(self, articles_with_scores: List[Tuple[Article, float, str]]):
         """Send digest of articles.
         
         Args:
