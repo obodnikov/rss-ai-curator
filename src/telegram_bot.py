@@ -227,15 +227,17 @@ class TelegramBot:
                 db, pending, liked, disliked
             )
             
-            # Apply score threshold
+            # Get config settings
             min_score = self.config['filtering'].get('min_score_to_show', 7.0)
+            max_articles = self.config['filtering']['articles_per_digest']
+            
+            # Apply score threshold
             filtered = [
                 (a, s, r) for a, s, r in ranked
                 if s >= min_score
             ]
             
             # Limit to articles per digest
-            max_articles = self.config['filtering']['articles_per_digest']
             digest_articles = filtered[:max_articles]
             
             if digest_articles:
@@ -246,15 +248,61 @@ class TelegramBot:
                 )
                 logger.info(f"Manual digest triggered by user {user_id}: {len(digest_articles)} articles")
             else:
-                await update.effective_message.reply_text(
-                    f"ℹ️ No articles met the score threshold (min: {min_score}/10)\n\n"
-                    f"Tip: Like some articles first to train the system!"
-                )
+                # No articles met threshold - provide detailed feedback
+                if ranked:
+                    # Get score statistics
+                    scores = [s for _, s, _ in ranked]
+                    max_score = max(scores)
+                    avg_score = sum(scores) / len(scores)
+                    
+                    feedback_msg = (
+                        f"ℹ️ No articles met the score threshold\n\n"
+                        f"📊 Statistics:\n"
+                        f"• Threshold: {min_score}/10\n"
+                        f"• Highest score: {max_score:.1f}/10\n"
+                        f"• Average score: {avg_score:.1f}/10\n"
+                        f"• Articles ranked: {len(ranked)}\n\n"
+                    )
+                    
+                    # Provide helpful suggestions based on situation
+                    if len(liked) < 5:
+                        feedback_msg += (
+                            f"💡 Tip: You have only {len(liked)} liked articles. "
+                            f"Rate 10-15 more articles to improve recommendations!\n\n"
+                            f"Temporarily lower threshold in config:\n"
+                            f"<code>min_score_to_show: {max(0, min_score - 2):.1f}</code>"
+                        )
+                    else:
+                        feedback_msg += (
+                            f"💡 Suggestions:\n"
+                            f"1. Lower threshold to {max_score:.1f} in config\n"
+                            f"2. Adjust RSS feeds to match your interests\n"
+                            f"3. Review your liked/disliked articles\n\n"
+                            f"Config setting:\n"
+                            f"<code>min_score_to_show: {max(0, max_score - 0.5):.1f}</code>"
+                        )
+                    
+                    await update.effective_message.reply_text(
+                        feedback_msg,
+                        parse_mode='HTML'
+                    )
+                else:
+                    # No articles were ranked at all
+                    await update.effective_message.reply_text(
+                        f"⚠️ Ranking failed\n\n"
+                        f"• Pending articles: {len(pending)}\n"
+                        f"• Articles ranked: 0\n\n"
+                        f"This might indicate an issue with embeddings or LLM. "
+                        f"Check logs for errors."
+                    )
         
         except Exception as e:
             logger.error(f"Error in manual digest: {e}")
             await update.effective_message.reply_text(
-                f"❌ Error generating digest:\n{str(e)}"
+                f"❌ Error generating digest:\n\n"
+                f"<code>{str(e)}</code>\n\n"
+                f"Check logs for details.",
+                parse_mode='HTML'
             )
         finally:
             db.close()
