@@ -103,7 +103,7 @@ telegram:
 
 # Filtering Configuration
 filtering:
-  similarity_threshold: 0.6     # Min similarity score to consider
+  similarity_threshold: 0.0     # Min similarity score to consider # current status   • Max: 0.262, Avg: 0.134
   top_candidates_for_llm: 30     # How many to send to LLM after filtering
   articles_per_digest: 8         # How many to show in each digest
   min_score_to_show: 6.0         # Min LLM score to include in digest
