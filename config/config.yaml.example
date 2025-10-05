@@ -3,11 +3,11 @@
 # LLM Configuration
 llm:
   provider: "chatgpt"  # Options: "chatgpt" or "claude"
-  response_language: "Russian"  # Any language!
+  response_language: "English"  # Any language!
   response_length: "concise"    # concise/medium/detailed
   
   chatgpt:
-    model: "gpt-4o-mini"  # Options: gpt-4.1, gpt-4.1-mini, gpt-5, gpt-5-mini
+    model: "gpt-4.1-mini"  # Options: gpt-4.1, gpt-4.1-mini, gpt-5, gpt-5-mini
     api_key_env: "OPENAI_API_KEY"
     temperature: 0.7
     max_tokens: 500
@@ -63,12 +63,6 @@ cleanup:
 
 # RSS Feed Sources
 rss_feeds:
-  - url: "https://habr.com/ru/rss/hub/machine_learning/all/"
-    name: "Habr.com - Machine Learning Hub"
-  - url: "https://jalammar.github.io/feed.xml"
-    name: "Jay Alammar's Blog"
-  - url: "https://elementy.ru/rss/news"
-    name: "Elements of Big Science"
   - url: "https://techcrunch.com/feed/"
     name: "TechCrunch"
   - url: "https://www.theverge.com/rss/index.xml"
@@ -103,10 +97,10 @@ telegram:
 
 # Filtering Configuration
 filtering:
-  similarity_threshold: 0. 0     # Min similarity score to consider
-  top_candidates_for_llm: 30     # How many to send to LLM after filtering
-  articles_per_digest: 10         # How many to show in each digest
-  min_score_to_show: 3.0         # Min LLM score to include in digest
+  similarity_threshold: 0.7      # Min similarity score to consider
+  top_candidates_for_llm: 20     # How many to send to LLM after filtering
+  articles_per_digest: 8         # How many to show in each digest
+  min_score_to_show: 7.0         # Min LLM score to include in digest
 
 # Scheduling Configuration
 scheduling:

@@ -1,85 +1,119 @@
-# RSS AI Curator 🤖📰
+# RSS AI Curator - Complete Setup Guide
 
-AI-powered RSS feed aggregator that learns your preferences and sends personalized article recommendations via Telegram.
-
-## Features
-
-- 🔍 **Smart Filtering**: Hybrid approach using embeddings + LLM ranking
-- 🧠 **Preference Learning**: Like/dislike feedback trains the system
-- 🤖 **Multi-LLM Support**: Claude Sonnet 4.5 or ChatGPT (4.1, 4.1-mini, 5, 5-mini)
-- 📱 **Telegram Bot**: Private chat with interactive buttons
-- 🗑️ **Auto Cleanup**: Intelligent article retention policies
-- 💾 **SQLite Storage**: Zero-config database
-
-## Architecture
+## 📋 Complete Project Structure
 
 ```
-RSS Feeds → Embeddings → Similarity Filter → LLM Ranker → Telegram Bot
-              ↓                                    ↓
-         ChromaDB                            Your Feedback
-                                                  ↓
-                                         Continuous Learning
+rss-ai-curator/
+├── config/
+│   ├── config.yaml              # Main configuration (customize this)
+│   └── .env                     # API keys (create from .env.example)
+│
+├── src/
+│   ├── __init__.py              # Package initialization
+│   ├── database.py              # SQLAlchemy models & DB management
+│   ├── fetcher.py               # RSS feed aggregation
+│   ├── embedder.py              # OpenAI embeddings & ChromaDB
+│   ├── context_selector.py     # Smart example selection for LLM
+│   ├── cleanup.py               # Article retention & cleanup
+│   ├── ranker.py                # LLM-based article ranking
+│   ├── telegram_bot.py          # Telegram bot interface
+│   └── scheduler.py             # APScheduler jobs
+│
+├── tests/
+│   └── test_ranker.py           # Basic tests (pytest)
+│
+├── data/                        # Created automatically
+│   ├── rss_curator.db           # SQLite database
+│   └── chromadb/                # Vector embeddings
+│
+├── logs/                        # Created automatically
+│   └── rss_curator.log          # Application logs
+│
+├── main.py                      # Entry point
+├── requirements.txt             # Python dependencies
+├── .env.example                 # Environment variables template
+├── .gitignore                   # Git ignore rules
+├── README.md                    # Main documentation
+└── SETUP_GUIDE.md              # This file
 ```
 
-## Quick Start
+## 🚀 Quick Start (5 Minutes)
 
-### 1. Prerequisites
-
-- Python 3.9+
-- Telegram account
-- OpenAI API key (for embeddings + optional ChatGPT)
-- Anthropic API key (optional, for Claude)
-
-### 2. Installation
+### Step 1: Clone/Download the Project
 
 ```bash
-# Clone or create project directory
-mkdir rss-ai-curator && cd rss-ai-curator
+# Create project directory
+mkdir rss-ai-curator
+cd rss-ai-curator
 
+# Copy all project files into this directory
+```
+
+### Step 2: Create Virtual Environment
+
+```bash
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
+# Activate it
+# On macOS/Linux:
+source venv/bin/activate
+
+# On Windows:
+venv\Scripts\activate
+```
+
+### Step 3: Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configuration
+### Step 4: Get API Keys
 
-#### Create Telegram Bot
+#### OpenAI API Key (Required)
+1. Go to https://platform.openai.com/api-keys
+2. Create new API key
+3. Copy the key (starts with `sk-proj-...`)
 
-1. Message [@BotFather](https://t.me/botfather) on Telegram
-2. Send `/newbot` and follow instructions
-3. Copy the bot token
+#### Anthropic API Key (Optional - only if using Claude)
+1. Go to https://console.anthropic.com/settings/keys
+2. Create new API key
+3. Copy the key (starts with `sk-ant-...`)
 
-#### Get Your Telegram User ID
+#### Telegram Bot Token (Required)
+1. Open Telegram and message [@BotFather](https://t.me/botfather)
+2. Send `/newbot` command
+3. Follow instructions to create your bot
+4. Copy the bot token (looks like `123456789:ABCdefGHI...`)
 
-1. Message [@userinfobot](https://t.me/userinfobot)
+#### Your Telegram User ID (Required)
+1. Message [@userinfobot](https://t.me/userinfobot) on Telegram
 2. Copy your numeric user ID
 
-#### Set Up API Keys
-
-Create `.env` file:
+### Step 5: Configure Environment Variables
 
 ```bash
+# Copy example file
 cp .env.example .env
+
+# Edit .env file with your actual keys
+nano .env  # or use any text editor
 ```
 
-Edit `.env`:
-
+Your `.env` should look like:
 ```env
-# Required
-OPENAI_API_KEY=sk-proj-...
-TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+OPENAI_API_KEY=sk-proj-YOUR_ACTUAL_KEY_HERE
+TELEGRAM_BOT_TOKEN=123456789:YOUR_BOT_TOKEN_HERE
 TELEGRAM_ADMIN_USER_ID=123456789
 
-# Optional (if using Claude)
-ANTHROPIC_API_KEY=sk-ant-...
+# Optional: Only if using Claude
+ANTHROPIC_API_KEY=sk-ant-YOUR_KEY_HERE
 ```
 
-#### Configure RSS Feeds
+### Step 6: Configure RSS Feeds
 
-Edit `config/config.yaml`:
+Edit `config/config.yaml` and customize your RSS feeds:
 
 ```yaml
 rss_feeds:
@@ -87,17 +121,36 @@ rss_feeds:
     name: "TechCrunch"
   - url: "https://www.theverge.com/rss/index.xml"
     name: "The Verge"
-  # Add your 10-15 feeds here
+  # Add your 10-15 favorite feeds here
 ```
 
-### 4. Initialize Database
+### Step 7: Choose Your LLM Provider
+
+In `config/config.yaml`, set your preferred LLM:
+
+```yaml
+llm:
+  provider: "chatgpt"  # or "claude"
+  
+  chatgpt:
+    model: "gpt-4.1-mini"  # Cheapest option
+    # Other options: gpt-4.1, gpt-5, gpt-5-mini
+```
+
+### Step 8: Initialize Database
 
 ```bash
-# First run creates database and tables
 python main.py init
 ```
 
-### 5. Start the Bot
+You should see:
+```
+INFO: Initializing database...
+INFO: Database tables created
+✅ Initialization complete!
+```
+
+### Step 9: Start the Bot
 
 ```bash
 python main.py start
@@ -106,164 +159,237 @@ python main.py start
 You should see:
 ```
 INFO: Database initialized
-INFO: Scheduler started with all jobs
+INFO: Embedder initialized with model text-embedding-3-small
+INFO: Ranker initialized with chatgpt (gpt-4.1-mini)
 INFO: Telegram bot started
-INFO: RSS AI Curator is running...
+INFO: Scheduler started with all jobs
+🚀 RSS AI Curator is running...
+Press Ctrl+C to stop
 ```
 
-### 6. Test in Telegram
+### Step 10: Test in Telegram
 
-1. Open Telegram and search for your bot
-2. Send `/start` to begin
-3. Wait for first digest (3 hours) or send `/fetch` to fetch immediately
-4. Click 👍 Like or 👎 Dislike on articles
+1. Open Telegram and find your bot (search by name)
+2. Send `/start` to your bot
+3. Wait for first digest (3 hours) OR manually trigger:
+   ```bash
+   # In another terminal (keep bot running)
+   python main.py fetch   # Fetch RSS feeds now
+   python main.py digest  # Send digest now
+   ```
+4. Rate articles with 👍 Like or 👎 Dislike buttons
 5. System learns your preferences!
 
-## Usage
+## 🎯 Testing the Setup
 
-### Telegram Commands
+### Test 1: Manual RSS Fetch
 
-- `/start` - Initialize bot
-- `/fetch` - Fetch RSS feeds now
-- `/digest` - Generate digest now
-- `/stats` - Show your preference stats
-- `/cleanup` - Run cleanup now
-- `/help` - Show all commands
+```bash
+# Fetch articles from all configured RSS feeds
+python main.py fetch
+```
 
-### Configuration Options
+Expected output:
+```
+INFO: Starting RSS fetch for all feeds...
+INFO: Feed 'TechCrunch': 5 new articles
+INFO: Feed 'The Verge': 3 new articles
+INFO: RSS fetch complete: 8 new articles total
+✅ Fetched 8 new articles
+```
 
-See `config/config.yaml` for:
+### Test 2: Check Statistics
 
-- **LLM Settings**: Switch between Claude/ChatGPT, select model
-- **Context Limits**: How many examples to show LLM (default: 10 liked, 5 disliked)
-- **Cleanup Policy**: Article retention (liked: 365d, disliked: 90d, neutral: 30d)
-- **Scheduling**: Fetch interval (1h), digest interval (3h)
-- **Filtering**: Similarity threshold, articles per digest
+```bash
+python main.py stats
+```
 
-### Switching LLM Providers
+Expected output:
+```
+==================================================
+RSS AI Curator - Statistics
+==================================================
+Total articles:     8
+Liked articles:     0
+Disliked articles:  0
+Total cleanups:     0
+Total deleted:      0
+Database size:      0.05 MB
+==================================================
+```
 
-Edit `config/config.yaml`:
+### Test 3: Generate Digest
 
+```bash
+# This will send articles to your Telegram
+python main.py digest
+```
+
+Check your Telegram for incoming messages!
+
+## 🔧 Configuration Options
+
+### LLM Provider Selection
+
+**ChatGPT (OpenAI)**
 ```yaml
 llm:
-  provider: "chatgpt"  # or "claude"
-  
+  provider: "chatgpt"
   chatgpt:
-    model: "gpt-4.1-mini"  # Options: gpt-4.1, gpt-4.1-mini, gpt-5, gpt-5-mini
-  
+    model: "gpt-4.1-mini"  # Fastest & cheapest
+    # model: "gpt-4.1"      # More capable
+    # model: "gpt-5-mini"   # Future model
+    # model: "gpt-5"        # Most capable (when available)
+```
+
+**Claude (Anthropic)**
+```yaml
+llm:
+  provider: "claude"
   claude:
     model: "claude-sonnet-4-5-20250929"
 ```
 
-Restart the bot to apply changes.
+### Scheduling
 
-## Project Structure
-
-```
-rss-ai-curator/
-├── config/
-│   ├── config.yaml          # Main configuration
-│   └── .env                 # API keys (git-ignored)
-├── src/
-│   ├── __init__.py
-│   ├── database.py          # SQLAlchemy models
-│   ├── fetcher.py           # RSS aggregation
-│   ├── embedder.py          # OpenAI embeddings
-│   ├── context_selector.py # Smart example selection
-│   ├── cleanup.py           # Article retention
-│   ├── ranker.py            # LLM ranking logic
-│   ├── telegram_bot.py      # Bot handlers
-│   └── scheduler.py         # Cron jobs
-├── data/                    # Created at runtime
-│   ├── rss_curator.db       # SQLite database
-│   └── chromadb/            # Vector embeddings
-├── logs/                    # Application logs
-├── main.py                  # Entry point
-├── requirements.txt
-└── README.md
+```yaml
+scheduling:
+  fetch_interval_hours: 1     # Fetch RSS every 1 hour
+  digest_interval_hours: 3    # Send digest every 3 hours
+  cleanup_time: "03:00"       # Daily cleanup at 3 AM
 ```
 
-## Monitoring
+### Filtering & Context
 
-### Check Logs
+```yaml
+filtering:
+  similarity_threshold: 0.7      # Min similarity to consider
+  top_candidates_for_llm: 20     # Articles to send to LLM
+  articles_per_digest: 8         # Max articles in each digest
+  min_score_to_show: 7.0         # Min LLM score to include
 
+llm_context:
+  max_liked_examples: 10         # Max liked to show LLM
+  max_disliked_examples: 5       # Max disliked to show LLM
+  selection_strategy: "hybrid"   # recent|similar|diverse|hybrid
+```
+
+### Cleanup Policy
+
+```yaml
+cleanup:
+  enabled: true
+  retention:
+    liked_articles_days: 365     # Keep liked for 1 year
+    disliked_articles_days: 90   # Keep disliked for 3 months
+    neutral_articles_days: 30    # Delete unrated after 30 days
+    max_liked_articles: 1000     # Hard limit on liked
+    max_disliked_articles: 500   # Hard limit on disliked
+```
+
+## 🐛 Troubleshooting
+
+### Issue: "ModuleNotFoundError"
+
+**Solution:**
 ```bash
+# Make sure virtual environment is activated
+source venv/bin/activate  # macOS/Linux
+venv\Scripts\activate     # Windows
+
+# Reinstall requirements
+pip install -r requirements.txt
+```
+
+### Issue: "TELEGRAM_BOT_TOKEN not set"
+
+**Solution:**
+```bash
+# Check .env file exists
+ls -la .env
+
+# Verify it contains your token
+cat .env
+
+# Make sure to restart the bot after editing .env
+```
+
+### Issue: "No articles in digest"
+
+**Possible causes:**
+1. **No RSS articles fetched yet**
+   ```bash
+   python main.py fetch  # Manually fetch
+   ```
+
+2. **Similarity threshold too high**
+   - Edit `config/config.yaml`
+   - Lower `similarity_threshold` from 0.7 to 0.5
+
+3. **No liked articles for comparison**
+   - First digest will be empty
+   - Rate some articles first
+   - Next digest will use your preferences
+
+### Issue: "High API costs"
+
+**Solutions:**
+1. **Switch to cheaper model:**
+   ```yaml
+   llm:
+     provider: "chatgpt"
+     chatgpt:
+       model: "gpt-4.1-mini"  # Instead of gpt-4.1
+   ```
+
+2. **Reduce LLM calls:**
+   ```yaml
+   filtering:
+     top_candidates_for_llm: 10  # From 20 to 10
+   
+   llm_context:
+     max_liked_examples: 5       # From 10 to 5
+   ```
+
+3. **Increase digest interval:**
+   ```yaml
+   scheduling:
+     digest_interval_hours: 6    # From 3 to 6 hours
+   ```
+
+### Issue: Bot stops responding
+
+**Solution:**
+```bash
+# Check if bot is running
+ps aux | grep main.py
+
+# Check logs for errors
 tail -f logs/rss_curator.log
+
+# Restart the bot
+python main.py start
 ```
 
-### View Statistics
+## 📦 Running as a Service
 
-```bash
-# In Telegram, send:
-/stats
-```
-
-Output:
-```
-📊 Your Preference Stats
-
-👍 Liked: 42 articles
-👎 Disliked: 18 articles
-📰 Total articles: 1,247
-🗑️ Cleaned up: 856 articles
-💾 Database size: 15.3 MB
-```
-
-### Database Inspection
-
-```bash
-sqlite3 data/rss_curator.db
-
-.tables
-SELECT COUNT(*) FROM articles;
-SELECT * FROM feedback LIMIT 10;
-```
-
-## Troubleshooting
-
-### Bot not responding
-
-1. Check bot is running: `ps aux | grep main.py`
-2. Check logs: `tail -f logs/rss_curator.log`
-3. Verify token: `echo $TELEGRAM_BOT_TOKEN`
-
-### No articles in digest
-
-1. Check RSS feeds are accessible: test URLs in browser
-2. Check similarity threshold isn't too high (config.yaml)
-3. Run immediate fetch: `/fetch` in Telegram
-4. Check you have some liked articles for comparison
-
-### High API costs
-
-1. Reduce `top_candidates_for_llm` in config (default: 20)
-2. Switch to cheaper model: `gpt-4.1-mini` instead of `gpt-4.1`
-3. Increase digest interval: 6h instead of 3h
-4. Reduce `max_liked_examples` from 10 to 5
-
-### Database too large
-
-1. Reduce retention days in config
-2. Run cleanup manually: `/cleanup` in Telegram
-3. Lower max article limits (liked: 1000 → 500)
-
-## Advanced Usage
-
-### Run as systemd service (Linux)
+### Linux (systemd)
 
 Create `/etc/systemd/system/rss-curator.service`:
 
 ```ini
 [Unit]
-Description=RSS AI Curator
+Description=RSS AI Curator Bot
 After=network.target
 
 [Service]
 Type=simple
 User=youruser
 WorkingDirectory=/path/to/rss-ai-curator
-ExecStart=/path/to/venv/bin/python main.py start
+Environment="PATH=/path/to/rss-ai-curator/venv/bin"
+ExecStart=/path/to/rss-ai-curator/venv/bin/python main.py start
 Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -271,107 +397,153 @@ WantedBy=multi-user.target
 
 Enable and start:
 ```bash
+sudo systemctl daemon-reload
 sudo systemctl enable rss-curator
 sudo systemctl start rss-curator
 sudo systemctl status rss-curator
 ```
 
-### Docker Deployment
+View logs:
+```bash
+sudo journalctl -u rss-curator -f
+```
+
+### macOS (launchd)
+
+Create `~/Library/LaunchAgents/com.rss-curator.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rss-curator</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/rss-ai-curator/venv/bin/python</string>
+        <string>/path/to/rss-ai-curator/main.py</string>
+        <string>start</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/path/to/rss-ai-curator</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/path/to/rss-ai-curator/logs/stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/path/to/rss-ai-curator/logs/stderr.log</string>
+</dict>
+</plist>
+```
+
+Load and start:
+```bash
+launchctl load ~/Library/LaunchAgents/com.rss-curator.plist
+launchctl start com.rss-curator
+```
+
+### Docker
+
+Create `Dockerfile`:
 
 ```dockerfile
 FROM python:3.11-slim
+
 WORKDIR /app
+
+# Install dependencies
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
 COPY . .
+
+# Create data directories
+RUN mkdir -p data logs
+
+# Run
 CMD ["python", "main.py", "start"]
 ```
 
 Build and run:
 ```bash
 docker build -t rss-curator .
-docker run -d --name rss-curator \
+
+docker run -d \
+  --name rss-curator \
+  --restart unless-stopped \
   --env-file .env \
   -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/config:/app/config \
   rss-curator
 ```
 
-### Backup Strategy
+View logs:
+```bash
+docker logs -f rss-curator
+```
+
+## 🔐 Security Best Practices
+
+1. **Never commit `.env` file**
+   - Already in `.gitignore`
+   - Contains sensitive API keys
+
+2. **Restrict bot to yourself only**
+   - Bot already checks admin user ID
+   - Only you can use it
+
+3. **Rotate API keys periodically**
+   - OpenAI: https://platform.openai.com/api-keys
+   - Anthropic: https://console.anthropic.com/settings/keys
+
+4. **Monitor API usage**
+   - OpenAI: https://platform.openai.com/usage
+   - Anthropic: https://console.anthropic.com/settings/billing
+
+## 📊 Cost Monitoring
+
+Check your daily costs:
 
 ```bash
-# Backup database
-cp data/rss_curator.db data/backups/rss_curator_$(date +%Y%m%d).db
+# See how many articles you're processing
+python main.py stats
 
-# Backup ChromaDB
-tar -czf data/backups/chromadb_$(date +%Y%m%d).tar.gz data/chromadb/
+# Calculate estimated cost:
+# Embeddings: ~$0.02 per 1,000 articles
+# LLM calls: 
+#   - gpt-4.1-mini: ~$0.10 per 1,000 rankings
+#   - gpt-4.1: ~$1.00 per 1,000 rankings
+#   - Claude Sonnet: ~$0.50 per 1,000 rankings
 ```
 
-## Cost Estimation
+**Daily estimate with 15 feeds:**
+- Fetch: 15 feeds × 10 articles × 24 = 3,600 articles/day
+- Embeddings: 3,600 × $0.00002 = $0.07/day
+- LLM rankings: ~200 candidates × 8 digests = 1,600 calls
+  - gpt-4.1-mini: $0.16/day
+  - gpt-4.1: $1.60/day
+  - Claude Sonnet: $0.80/day
 
-**Monthly costs** (10-15 feeds, 3h digests):
+**Monthly total: $5-50 depending on model choice**
 
-| Component | Usage | Cost |
-|-----------|-------|------|
-| Embeddings (text-embedding-3-small) | ~100k articles | $0.50 |
-| ChatGPT gpt-4.1-mini | ~5k rankings | $5-10 |
-| ChatGPT gpt-4.1 | ~5k rankings | $30-50 |
-| Claude Sonnet 4.5 | ~5k rankings | $15-25 |
-| **Total** | | **$5-50/mo** |
+## 🎉 You're Ready!
 
-Optimize by:
-- Using gpt-4.1-mini for most rankings
-- Increasing digest interval (3h → 6h)
-- Reducing candidates sent to LLM (20 → 10)
+Your RSS AI Curator is now set up and running! 
 
-## Development
+**Next steps:**
+1. Rate articles as they come in (👍/👎)
+2. Let the system learn (need ~10-20 ratings)
+3. Watch it get better at finding relevant content
+4. Customize config to your preferences
 
-### Run Tests
+**Need help?**
+- Check `README.md` for detailed documentation
+- Review logs: `tail -f logs/rss_curator.log`
+- Run stats: `python main.py stats`
 
-```bash
-pytest tests/
-```
-
-### Add New RSS Feed
-
-Edit `config/config.yaml`:
-```yaml
-rss_feeds:
-  - url: "https://newsite.com/feed"
-    name: "New Site"
-```
-
-Restart bot or run `/fetch`.
-
-### Custom Selection Strategy
-
-Edit `src/context_selector.py` and add new strategy:
-
-```python
-def _select_my_strategy(self, ...):
-    # Your logic here
-    pass
-```
-
-Update config:
-```yaml
-llm_context:
-  selection_strategy: "my_strategy"
-```
-
-## Contributing
-
-Follows PEP8 with type hints. Keep files under 800 lines. See `AI-python.md` for full guidelines.
-
-## License
-
-MIT License - feel free to modify and use!
-
-## Support
-
-- 🐛 Issues: Open GitHub issue
-- 💬 Questions: Check troubleshooting section
-- 📧 Contact: [Your email]
-
----
-
-**Happy curating! 🎉**
+**Enjoy your personalized news feed! 📰🤖**
