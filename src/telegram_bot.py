@@ -669,6 +669,7 @@ class TelegramBot:
             updated_text += f"\n\n{emoji} Your feedback has been {feedback_msg}!"
             
             # Update message without removing buttons
+            # IMPORTANT: Keep disable_web_page_preview=True to prevent link preview issues
             from telegram import InlineKeyboardButton, InlineKeyboardMarkup
             keyboard = [
                 [
@@ -682,7 +683,7 @@ class TelegramBot:
                 text=updated_text,
                 reply_markup=reply_markup,
                 parse_mode='HTML',
-                disable_web_page_preview=False
+                disable_web_page_preview=True  # Disable preview to allow editing
             )
             
             logger.info(
