@@ -6,6 +6,7 @@ from typing import List, Dict, Tuple, Optional
 from sqlalchemy.orm import Session
 from openai import OpenAI
 from anthropic import Anthropic
+import numpy as np
 from .database import Article, Feedback, LLMRanking
 from .embedder import Embedder
 from .context_selector import LLMContextSelector
@@ -389,6 +390,7 @@ class ArticleRanker:
         )
         
         return ranked
+    
     def _filter_by_similarity(
         self,
         new_articles: List[Article],
@@ -420,7 +422,7 @@ class ArticleRanker:
             for liked in liked_articles:
                 liked_emb = self.embedder.get_article_embedding(liked.id)
                 if liked_emb is not None:
-                    sim = ArticleRanker._cosine_similarity(embedding, liked_emb)
+                    sim = self._cosine_similarity(embedding, liked_emb)
                     liked_sims.append(sim)
             
             # Calculate disliked similarity
@@ -428,7 +430,7 @@ class ArticleRanker:
             for disliked in disliked_articles:
                 disliked_emb = self.embedder.get_article_embedding(disliked.id)
                 if disliked_emb is not None:
-                    sim = ArticleRanker._cosine_similarity(embedding, disliked_emb)
+                    sim = self._cosine_similarity(embedding, disliked_emb)
                     disliked_sims.append(sim)
             
             # Combined score
@@ -458,7 +460,7 @@ class ArticleRanker:
         )
         
         return selected
-
+    
     def _select_balanced_by_source(
         self,
         scored_articles: List[dict],
@@ -467,8 +469,6 @@ class ArticleRanker:
         """Select articles ensuring balanced source representation."""
         if not scored_articles:
             return []
-        
-        from collections import defaultdict
         
         # Group by source
         by_source = defaultdict(list)
@@ -513,3 +513,13 @@ class ArticleRanker:
         
         return selected_articles
     
+    @staticmethod
+    def _cosine_similarity(vec1, vec2) -> float:
+        """Calculate cosine similarity between two vectors."""
+        norm1 = np.linalg.norm(vec1)
+        norm2 = np.linalg.norm(vec2)
+        
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        
+        return float(np.dot(vec1, vec2) / (norm1 * norm2))
