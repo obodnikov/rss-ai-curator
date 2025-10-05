@@ -2,7 +2,7 @@
 import os
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import create_engine, Column, Integer, String, Text, Float, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Text, Float, DateTime, ForeignKey, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import logging
@@ -28,6 +28,10 @@ class Article(Base):
     content_hash = Column(String(64), unique=True, index=True)
     delete_after = Column(DateTime, index=True)
     
+    # NEW: Track if article was shown to user
+    shown_to_user = Column(Boolean, default=False, index=True)
+    shown_at = Column(DateTime)
+    
     # Relationships
     feedback = relationship("Feedback", back_populates="article", cascade="all, delete-orphan")
     rankings = relationship("LLMRanking", back_populates="article", cascade="all, delete-orphan")
@@ -46,7 +50,7 @@ class Feedback(Base):
     user_id = Column(Integer, nullable=False)
     rating = Column(String(20), nullable=False)  # 'like' or 'dislike'
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    relevance_score = Column(Float)  # Track how useful this example is
+    relevance_score = Column(Float)
     
     # Relationships
     article = relationship("Article", back_populates="feedback")
@@ -62,7 +66,7 @@ class LLMRanking(Base):
     
     id = Column(Integer, primary_key=True)
     article_id = Column(Integer, ForeignKey('articles.id'), nullable=False, index=True)
-    provider = Column(String(20), nullable=False)  # 'claude' or 'chatgpt'
+    provider = Column(String(20), nullable=False)
     model = Column(String(50), nullable=False)
     score = Column(Float, nullable=False)
     reasoning = Column(Text)
@@ -174,6 +178,9 @@ class DatabaseManager:
         """
         stats = {
             'total_articles': session.query(Article).count(),
+            'shown_articles': session.query(Article).filter(
+                Article.shown_to_user == True
+            ).count(),
             'liked_articles': session.query(Feedback).filter(
                 Feedback.rating == 'like'
             ).count(),
