@@ -608,97 +608,97 @@ class TelegramBot:
         finally:
             db.close()
     
-async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle button callbacks."""
-        query = update.callback_query
-        await query.answer()
-        
-        user_id = update.effective_user.id
-        if user_id != self.admin_user_id:
-            return
-        
-        # Parse callback data: "like_123" or "dislike_123"
-        data = query.data
-        action, article_id_str = data.split('_')
-        article_id = int(article_id_str)
-        
-        db = self.db_manager.get_session()
-        try:
-            # Get article
-            article = db.query(Article).filter(
-                Article.id == article_id
-            ).first()
+    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+            """Handle button callbacks."""
+            query = update.callback_query
+            await query.answer()
             
-            if not article:
-                await query.answer("Article not found.", show_alert=True)
+            user_id = update.effective_user.id
+            if user_id != self.admin_user_id:
                 return
             
-            # Check if feedback already exists
-            existing_feedback = db.query(Feedback).filter(
-                Feedback.article_id == article_id,
-                Feedback.user_id == user_id
-            ).first()
+            # Parse callback data: "like_123" or "dislike_123"
+            data = query.data
+            action, article_id_str = data.split('_')
+            article_id = int(article_id_str)
             
-            if existing_feedback:
-                # Update existing feedback
-                existing_feedback.rating = action
-                existing_feedback.created_at = datetime.utcnow()
-                feedback_msg = "updated"
-            else:
-                # Create new feedback
-                feedback = Feedback(
-                    article_id=article_id,
-                    user_id=user_id,
-                    rating=action
+            db = self.db_manager.get_session()
+            try:
+                # Get article
+                article = db.query(Article).filter(
+                    Article.id == article_id
+                ).first()
+                
+                if not article:
+                    await query.answer("Article not found.", show_alert=True)
+                    return
+                
+                # Check if feedback already exists
+                existing_feedback = db.query(Feedback).filter(
+                    Feedback.article_id == article_id,
+                    Feedback.user_id == user_id
+                ).first()
+                
+                if existing_feedback:
+                    # Update existing feedback
+                    existing_feedback.rating = action
+                    existing_feedback.created_at = datetime.utcnow()
+                    feedback_msg = "updated"
+                else:
+                    # Create new feedback
+                    feedback = Feedback(
+                        article_id=article_id,
+                        user_id=user_id,
+                        rating=action
+                    )
+                    db.add(feedback)
+                    feedback_msg = "recorded"
+                
+                db.commit()
+                
+                # Show feedback in the button callback popup (non-intrusive)
+                emoji = "👍" if action == "like" else "👎"
+                await query.answer(
+                    f"{emoji} Feedback {feedback_msg}!",
+                    show_alert=False
                 )
-                db.add(feedback)
-                feedback_msg = "recorded"
-            
-            db.commit()
-            
-            # Show feedback in the button callback popup (non-intrusive)
-            emoji = "👍" if action == "like" else "👎"
-            await query.answer(
-                f"{emoji} Feedback {feedback_msg}!",
-                show_alert=False
-            )
-            
-            # Update button appearance to show which was selected
-            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-            
-            # Highlight the selected button
-            if action == "like":
-                keyboard = [
-                    [
-                        InlineKeyboardButton("✅ Liked", callback_data=f"like_{article.id}"),
-                        InlineKeyboardButton("👎 Dislike", callback_data=f"dislike_{article.id}")
+                
+                # Update button appearance to show which was selected
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                
+                # Highlight the selected button
+                if action == "like":
+                    keyboard = [
+                        [
+                            InlineKeyboardButton("✅ Liked", callback_data=f"like_{article.id}"),
+                            InlineKeyboardButton("👎 Dislike", callback_data=f"dislike_{article.id}")
+                        ]
                     ]
-                ]
-            else:
-                keyboard = [
-                    [
-                        InlineKeyboardButton("👍 Like", callback_data=f"like_{article.id}"),
-                        InlineKeyboardButton("✅ Disliked", callback_data=f"dislike_{article.id}")
+                else:
+                    keyboard = [
+                        [
+                            InlineKeyboardButton("👍 Like", callback_data=f"like_{article.id}"),
+                            InlineKeyboardButton("✅ Disliked", callback_data=f"dislike_{article.id}")
+                        ]
                     ]
-                ]
+                
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                # Update only the buttons, NOT the message text
+                # This preserves the preview!
+                await query.edit_message_reply_markup(reply_markup=reply_markup)
+                
+                logger.info(
+                    f"User {user_id} rated article {article_id} as {action}"
+                )
             
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            # Update only the buttons, NOT the message text
-            # This preserves the preview!
-            await query.edit_message_reply_markup(reply_markup=reply_markup)
-            
-            logger.info(
-                f"User {user_id} rated article {article_id} as {action}"
-            )
-        
-        except Exception as e:
-            logger.error(f"Error in button callback: {e}")
-            await query.answer(f"Error: {str(e)}", show_alert=True)
-        finally:
-            db.close()
+            except Exception as e:
+                logger.error(f"Error in button callback: {e}")
+                await query.answer(f"Error: {str(e)}", show_alert=True)
+            finally:
+                db.close()
     
-    
+
     async def send_article(
         self,
         article: Article,
