@@ -77,11 +77,11 @@ if not exist .env (
     echo .env file already exists, skipping...
 )
 
-REM Initialize database
+REM Initialize database with shown_to_user fields
 echo.
-echo Initializing database...
+echo Initializing database with shown tracking...
 python main.py init
-echo [OK] Database initialized
+echo [OK] Database initialized with shown_to_user fields
 
 REM Print next steps
 echo.
@@ -106,7 +106,10 @@ echo    python main.py stats   # Show statistics
 echo.
 echo For detailed documentation, see:
 echo   - README.md
-echo   - SETUP_GUIDE.md
+echo   - docs\SETUP_GUIDE.md
+echo.
+echo Note: Articles are tracked with 'shown_to_user' field
+echo No migration needed - database created with v0.1.0 schema!
 echo.
 echo ==================================================
 echo.
