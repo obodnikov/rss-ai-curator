@@ -634,7 +634,16 @@ class TelegramBot:
             """Handle button callbacks."""
             query = update.callback_query
             await query.answer()
-            
+
+            # Handle case where event loop might be closed during shutdown
+            try:
+                await query.answer()
+            except Exception as e:
+                if "Event loop is closed" in str(e):
+                    logger.warning("Event loop closed during callback - bot is shutting down")
+                    return
+                raise
+
             user_id = update.effective_user.id
             if user_id != self.admin_user_id:
                 return
@@ -872,10 +881,26 @@ class TelegramBot:
         logger.info("Telegram bot started")
     
     async def stop(self):
-        """Stop the bot."""
-        await self.app.stop()
-        await self.app.shutdown()
-        logger.info("Telegram bot stopped")
+        """Stop the bot gracefully."""
+        try:
+            logger.info("Stopping Telegram bot...")
+            
+            # Stop accepting new updates first
+            if self.app.updater.running:
+                await self.app.updater.stop()
+                logger.debug("Updater stopped")
+            
+            # Then stop the application
+            await self.app.stop()
+            logger.debug("Application stopped")
+            
+            # Finally shutdown (closes event loop)
+            await self.app.shutdown()
+            logger.debug("Application shut down")
+            
+            logger.info("Telegram bot stopped successfully")
+        except Exception as e:
+            logger.error(f"Error during bot shutdown: {e}", exc_info=True)
     
     def run_polling(self):
         """Run bot in polling mode (blocking)."""

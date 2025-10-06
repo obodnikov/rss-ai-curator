@@ -199,17 +199,23 @@ async def run_app():
     
     except KeyboardInterrupt:
         logger.info("Shutdown requested...")
-    
+    except Exception as e:
+        logger.error(f"Unexpected error in main loop: {e}", exc_info=True)
     finally:
-        # Cleanup
-        logger.info("Stopping scheduler...")
-        scheduler.stop()
+        # Cleanup in reverse order of initialization
+        try:
+            logger.info("Stopping scheduler...")
+            scheduler.stop()
+        except Exception as e:
+            logger.error(f"Error stopping scheduler: {e}")
         
-        logger.info("Stopping Telegram bot...")
-        await telegram_bot.stop()
+        try:
+            logger.info("Stopping Telegram bot...")
+            await telegram_bot.stop()
+        except Exception as e:
+            logger.error(f"Error stopping Telegram bot: {e}")
         
         logger.info("✅ RSS AI Curator stopped")
-
 
 async def run_fetch():
     """Run RSS fetch once and exit."""
