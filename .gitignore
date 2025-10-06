@@ -70,4 +70,4 @@ chromadb/
 
 # Config (keep example)
 # Uncomment if you want to ignore config.yaml
-# config/config.yaml
+config/config.yaml
