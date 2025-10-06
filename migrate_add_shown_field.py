@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Migration: Add shown_to_user fields to articles table.
 
+⚠️  IMPORTANT: This migration is ONLY for existing databases!
+    New installations (v0.1.0+) already include these fields.
+
 Run this once to update existing database:
     python migrate_add_shown_field.py
+
+For fresh installations, just run:
+    python main.py init
 """
 import sqlite3
 import sys
