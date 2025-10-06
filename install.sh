@@ -85,11 +85,11 @@ else
     echo -e "${YELLOW}  .env file already exists, skipping...${NC}"
 fi
 
-# Initialize database
+# Initialize database with shown_to_user fields
 echo ""
-echo "Initializing database..."
+echo "Initializing database with shown tracking..."
 python main.py init
-echo -e "${GREEN}✓ Database initialized${NC}"
+echo -e "${GREEN}✓ Database initialized with shown_to_user fields${NC}"
 
 # Print next steps
 echo ""
@@ -114,6 +114,9 @@ echo "   python main.py stats   # Show statistics"
 echo ""
 echo "For detailed documentation, see:"
 echo "  - README.md"
-echo "  - SETUP_GUIDE.md"
+echo "  - docs/SETUP_GUIDE.md"
+echo ""
+echo "ℹ️  Note: Articles are tracked with 'shown_to_user' field"
+echo "   No migration needed - database created with v0.1.0 schema!"
 echo ""
 echo "=================================================="
