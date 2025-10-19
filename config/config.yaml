@@ -114,6 +114,11 @@ scheduling:
   digest_interval_hours: 3       # Send digest every N hours
   cleanup_time: "03:00"          # Daily cleanup time (HH:MM)
 
+# Random Articles Configuration
+random_articles:
+  count: 10              # Number of random articles to show
+  days_lookback: 2       # Look for articles from last N days
+
 # Database Configuration
 database:
   path: "data/rss_curator.db"
