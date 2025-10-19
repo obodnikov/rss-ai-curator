@@ -802,7 +802,7 @@ class TelegramBot:
         logger.info(f"Sent digest with {len(articles_with_scores)} articles")
 
     async def random_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /random command - show random unshown articles from last N days."""
+        """Handle /random command - show random unshown articles with balanced source selection."""
         if not update.effective_message:
             return
             
@@ -815,6 +815,7 @@ class TelegramBot:
         try:
             from datetime import datetime, timedelta
             from sqlalchemy import func
+            from collections import defaultdict
             
             # Get config values
             count = self.config.get('random_articles', {}).get('count', 10)
@@ -823,13 +824,13 @@ class TelegramBot:
             # Calculate cutoff date
             cutoff_date = datetime.utcnow() - timedelta(days=days)
             
-            # Query for unshown articles from last N days
-            articles = db.query(Article).filter(
+            # Query for all unshown articles from last N days
+            all_candidates = db.query(Article).filter(
                 Article.shown_to_user == False,
                 Article.published_at >= cutoff_date
-            ).order_by(func.random()).limit(count).all()
+            ).all()
             
-            if not articles:
+            if not all_candidates:
                 await update.effective_message.reply_text(
                     f"📭 No unshown articles found in the last {days} days.\n\n"
                     f"Try:\n"
@@ -838,23 +839,36 @@ class TelegramBot:
                 )
                 return
             
-            # Send info message
+            # ✨ Apply balanced source selection (same as ranker.py)
+            selected_articles = self._select_balanced_random(all_candidates, count)
+            
+            # Send info message with source distribution
+            distribution = defaultdict(int)
+            for article in selected_articles:
+                distribution[article.source] += 1
+            
+            dist_msg = "\n".join([f"  • {source}: {cnt}" for source, cnt in sorted(distribution.items())])
+            
             await update.effective_message.reply_text(
-                f"🎲 Showing {len(articles)} random articles from last {days} days\n"
-                f"(out of {count} requested)"
+                f"🎲 Showing {len(selected_articles)} random articles from last {days} days\n"
+                f"(Balanced across {len(distribution)} sources)\n\n"
+                f"📊 Distribution:\n{dist_msg}"
             )
             
             # Send each article with rating buttons
-            for article in articles:
+            for article in selected_articles:
                 await self._send_article(update, article, db)
             
             # Mark articles as shown
-            for article in articles:
+            for article in selected_articles:
                 article.shown_to_user = True
                 article.shown_at = datetime.utcnow()
             
             db.commit()
-            logger.info(f"Random command: sent {len(articles)} articles, marked as shown")
+            logger.info(
+                f"Random command: sent {len(selected_articles)} articles with balanced selection\n"
+                f"  Source distribution: {dict(distribution)}"
+            )
             
         except Exception as e:
             logger.error(f"Error in random command: {e}")
@@ -864,8 +878,68 @@ class TelegramBot:
         finally:
             db.close()
 
+    def _select_balanced_random(self, articles: List[Article], target_count: int) -> List[Article]:
+        """
+        Select random articles ensuring balanced source representation.
+        
+        Prevents high-volume sources from dominating the selection.
+        Uses same logic as ranker.py balanced selection.
+        
+        Args:
+            articles: List of candidate articles
+            target_count: Number of articles to select
+            
+        Returns:
+            List of selected articles with balanced source distribution
+        """
+        from collections import defaultdict
+        import random
+        
+        if not articles:
+            return []
+        
+        # If we have fewer articles than requested, return all
+        if len(articles) <= target_count:
+            return articles
+        
+        # Group by source
+        by_source = defaultdict(list)
+        for article in articles:
+            by_source[article.source].append(article)
+        
+        # Shuffle articles within each source for randomness
+        for source in by_source:
+            random.shuffle(by_source[source])
+        
+        # Calculate quota per source
+        num_sources = len(by_source)
+        quota_per_source = max(1, target_count // num_sources)
+        
+        # First pass: balanced selection (quota per source)
+        selected = []
+        for source, source_articles in by_source.items():
+            take_count = min(quota_per_source, len(source_articles))
+            selected.extend(source_articles[:take_count])
+        
+        # Second pass: fill remaining slots randomly
+        if len(selected) < target_count:
+            remaining = []
+            for source, source_articles in by_source.items():
+                remaining.extend(source_articles[quota_per_source:])
+            
+            # Shuffle remaining and take what we need
+            random.shuffle(remaining)
+            needed = target_count - len(selected)
+            selected.extend(remaining[:needed])
+        
+        # Final shuffle to mix sources
+        random.shuffle(selected)
+        
+        return selected[:target_count]
+
     async def _send_article(self, update: Update, article: Article, db):
-        """Helper method to send a single article with buttons.
+        """
+        Helper method to send a single article with buttons.
         
         Args:
             update: Telegram update object
