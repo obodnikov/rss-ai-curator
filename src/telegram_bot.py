@@ -60,6 +60,7 @@ class TelegramBot:
             BotCommand("cleanup", "Run cleanup now"),
             BotCommand("debug", "Show diagnostic information"),
             BotCommand("analyze", "Analyze config & suggest optimal settings"),
+            BotCommand("random", "Show random unshown articles"),
         ]
         
         await self.app.bot.set_my_commands(commands)
@@ -75,6 +76,7 @@ class TelegramBot:
         self.app.add_handler(CommandHandler("cleanup", self.cleanup_command))
         self.app.add_handler(CommandHandler("debug", self.debug_command))
         self.app.add_handler(CommandHandler("analyze", self.analyze_command))
+        self.app.add_handler(CommandHandler("random", self.random_command))
         self.app.add_handler(CallbackQueryHandler(self.button_callback))
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -119,7 +121,8 @@ class TelegramBot:
             "/digest - Generate and send digest now\n"
             "/cleanup - Run cleanup now\n"
             "/debug - Show diagnostic information\n"
-            "/analyze - Analyze config & suggest optimal settings\n\n"
+            "/analyze - Analyze config & suggest optimal settings\n"
+            "/random - Show N random unshown articles\n\n"
             "The bot automatically fetches and sends articles every few hours. "
             "Just rate them with the buttons!\n\n"
             "✨ Each article is shown only once - no need to rate everything!"  # ADDED
@@ -797,7 +800,120 @@ class TelegramBot:
             await self.send_article(article, score, reasoning)
         
         logger.info(f"Sent digest with {len(articles_with_scores)} articles")
-    
+
+    async def random_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /random command - show random unshown articles from last N days."""
+        if not update.effective_message:
+            return
+            
+        user_id = update.effective_user.id
+        
+        if user_id != self.admin_user_id:
+            return
+        
+        db = self.db_manager.get_session()
+        try:
+            from datetime import datetime, timedelta
+            from sqlalchemy import func
+            
+            # Get config values
+            count = self.config.get('random_articles', {}).get('count', 10)
+            days = self.config.get('random_articles', {}).get('days_lookback', 2)
+            
+            # Calculate cutoff date
+            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            
+            # Query for unshown articles from last N days
+            articles = db.query(Article).filter(
+                Article.shown_to_user == False,
+                Article.published_at >= cutoff_date
+            ).order_by(func.random()).limit(count).all()
+            
+            if not articles:
+                await update.effective_message.reply_text(
+                    f"📭 No unshown articles found in the last {days} days.\n\n"
+                    f"Try:\n"
+                    f"• /fetch - to get new articles\n"
+                    f"• Increase 'days_lookback' in config.yaml"
+                )
+                return
+            
+            # Send info message
+            await update.effective_message.reply_text(
+                f"🎲 Showing {len(articles)} random articles from last {days} days\n"
+                f"(out of {count} requested)"
+            )
+            
+            # Send each article with rating buttons
+            for article in articles:
+                await self._send_article(update, article, db)
+            
+            # Mark articles as shown
+            for article in articles:
+                article.shown_to_user = True
+                article.shown_at = datetime.utcnow()
+            
+            db.commit()
+            logger.info(f"Random command: sent {len(articles)} articles, marked as shown")
+            
+        except Exception as e:
+            logger.error(f"Error in random command: {e}")
+            await update.effective_message.reply_text(
+                f"❌ Error getting random articles:\n{str(e)}"
+            )
+        finally:
+            db.close()
+
+    async def _send_article(self, update: Update, article: Article, db):
+        """Helper method to send a single article with buttons.
+        
+        Args:
+            update: Telegram update object
+            article: Article object to send
+            db: Database session
+        """
+        # Check if article was already rated
+        existing_feedback = db.query(Feedback).filter(
+            Feedback.article_id == article.id,
+            Feedback.user_id == self.admin_user_id
+        ).first()
+        
+        # Format message
+        msg = f"📰 *{article.title}*\n\n"
+        
+        if article.summary:
+            msg += f"{article.summary}\n\n"
+        
+        if self.config['telegram']['show_source']:
+            msg += f"📍 Source: {article.source}\n"
+        
+        if self.config['telegram']['show_date'] and article.published_at:
+            date_str = article.published_at.strftime("%Y-%m-%d %H:%M")
+            msg += f"📅 Date: {date_str}\n"
+        
+        msg += f"\n🔗 [Read more]({article.url})"
+        
+        if existing_feedback:
+            emoji = "👍" if existing_feedback.rating == "like" else "👎"
+            msg += f"\n\n{emoji} You already rated this article"
+        
+        # Create rating buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("👍 Like", callback_data=f"like_{article.id}"),
+                InlineKeyboardButton("👎 Dislike", callback_data=f"dislike_{article.id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Send message
+        await update.effective_message.reply_text(
+            msg,
+            reply_markup=reply_markup,
+            parse_mode='Markdown',
+            disable_web_page_preview=True
+        )
+
     def _format_article_message(
         self,
         article: Article,
