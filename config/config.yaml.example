@@ -102,6 +102,11 @@ filtering:
   articles_per_digest: 8         # How many to show in each digest
   min_score_to_show: 7.0         # Min LLM score to include in digest
 
+# Random Articles Configuration
+random_articles:
+  count: 10              # Number of random articles to show
+  days_lookback: 2       # Look for articles from last N days
+
 # Scheduling Configuration
 scheduling:
   fetch_interval_hours: 1        # Fetch RSS feeds every N hours
